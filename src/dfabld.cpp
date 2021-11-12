@@ -5,8 +5,8 @@
 #include <algorithm>
 #include <cctype>
 #include <iostream>
-#include <map>
 #include <stdexcept>
+#include <unordered_map>
 
 void DfaBuilder::addPattern(std::unique_ptr<Node> syn_tree, unsigned n_pat, const ValueSet& sc) {
     if (n_pat > ValueSet::kMaxValue) { throw std::runtime_error("too many patterns"); }
@@ -148,143 +148,115 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
 void DfaBuilder::optimize() {
     std::cout << "Optimizing states..." << std::endl;
 
-    // Initialize working arrays
-    unsigned state_count = static_cast<unsigned>(Dtran_.size());
-    unsigned group_count = sc_count_ + static_cast<unsigned>(patterns_.size());
-    std::vector<int> state_group(state_count);
-    std::vector<bool> state_used(state_count);
-    std::vector<int> group_main_state(group_count);
-    for (unsigned group = 0; group < group_count; ++group) { group_main_state[group] = -1; }
+    std::vector<unsigned> state_group(Dtran_.size());
+    std::vector<int> group_main_state;
+    group_main_state.reserve(Dtran_.size());
 
-    // Initial classification
-    for (unsigned state = 0; state < state_count; ++state) {
-        unsigned group_no = 0;
-        if (!lls_[state].empty()) {
-            std::vector<bool> state_mark(state_count);
-            std::vector<unsigned> state_stack;
-            bool is_dead = true;
-
-            // Is state belongs to 'dead' state group
-            for (unsigned i = 0; i < state_count; ++i) { state_mark[i] = false; }
-            state_stack.push_back(state);  // Add current state
-            do {
-                unsigned cur_state = state_stack.back();
-                state_stack.pop_back();
-
-                // Mark state
-                state_mark[cur_state] = true;
-                // Add adjucent states
-                for (unsigned symb = 0; symb < kSymbCount; ++symb) {
-                    int new_state = Dtran_[cur_state][symb];
-                    if (new_state != -1) {
-                        if (accept_[new_state] > 0) {
-                            is_dead = false;
-                            break;
-                        }
-                        if (!state_mark[new_state]) { state_stack.push_back(new_state); }
-                    }
-                }
-            } while (state_stack.size() > 0);
-
-            if (!is_dead) {
-                // Add to new group
-                group_no = group_count;
-                group_main_state.push_back(-1);
-                group_count++;
-            } else if (state < sc_count_) {
-                group_no = state;
-            }
-        } else if (state < sc_count_) {
-            group_no = state;
+    // Initial state classification
+    // Separate S, accepting the same pattern, and LLS states as mandatory groups
+    std::unordered_map<unsigned, unsigned> pattern_groups;
+    for (unsigned state = 0; state < Dtran_.size(); ++state) {
+        unsigned group = 0;
+        if (state < sc_count_ || !lls_[state].empty()) {
+            group = static_cast<unsigned>(group_main_state.size());
+            group_main_state.push_back(state);
+            if (accept_[state] > 0) { pattern_groups.emplace(accept_[state], group); }
         } else if (accept_[state] > 0) {
-            group_no = sc_count_ + accept_[state] - 1;
+            auto [it, success] = pattern_groups.emplace(accept_[state], 0);
+            if (success) {
+                group = static_cast<unsigned>(group_main_state.size());
+                group_main_state.push_back(state);
+                it->second = group;
+            } else {
+                group = it->second;
+            }
         }
-        if (group_main_state[group_no] == -1) {
-            group_main_state[group_no] = state;
-            state_used[state] = true;
-        } else {
-            state_used[state] = false;
-        }
-        state_group[state] = group_no;
+        state_group[state] = group;
     }
 
-    // Classify states
-    bool change = false;
+    // Classify other not mandatory states
+    unsigned prev_group_count = 0;
     do {
-        change = false;
+        prev_group_count = static_cast<unsigned>(group_main_state.size());
         for (unsigned symb = 0; symb < kSymbCount; ++symb) {
-            std::vector<int> old_state_group = state_group;
-            std::vector<std::map<int, int>> group_trans(group_count);
-            for (unsigned state = 0; state < state_count; ++state) {
-                int group = old_state_group[state];  // Current state group
-                int new_state = Dtran_[state][symb];
-                int new_group = -1;  // New state group
-                if (new_state != -1) { new_group = old_state_group[new_state]; }
-                auto& cur_group_trans = group_trans[group];
-                auto result = cur_group_trans.emplace(new_group, group);
-                if (result.second) {
-                    if (cur_group_trans.size() > 1) {  // Is not first found state in the group
-                        // Add new group
-                        result.first->second = group_count;
-                        state_group[state] = group_count;
-                        group_count++;
-                        group_main_state.push_back(state);
-                        state_used[state] = true;
-                        change = true;
-                    }
-                } else {
-                    state_group[state] = result.first->second;
+            std::vector<std::unordered_map<int, unsigned>> group_tran(group_main_state.size());
+            std::vector<unsigned> saved_state_group = state_group;  // Use unmodified group numbers
+            for (unsigned state = 0; state < Dtran_.size(); ++state) {
+                unsigned group = saved_state_group[state];
+                int next_group = Dtran_[state][symb] >= 0 ? saved_state_group[Dtran_[state][symb]] : -1;
+                auto [it, success] = group_tran[group].emplace(next_group, group);
+                if (success && group_tran[group].size() > 1) {  // The group needs splitting, add new group
+                    state_group[state] = static_cast<unsigned>(group_main_state.size());
+                    group_main_state.push_back(state);
+                    it->second = state_group[state];
+                } else {  // Group is already created for this target group
+                    state_group[state] = it->second;
                 }
             }
         }
-    } while (change);
+    } while (prev_group_count < group_main_state.size());
 
-    // Delete 'dead' states
-    for (unsigned state = 0; state < state_count; ++state) {
-        bool is_dead = true;
-        if (state_used[state] && (state >= sc_count_) && (accept_[state] == 0)) {  // Is not start or accepting state
-            // Check for 'dead' state
-            for (unsigned symb = 0; symb < kSymbCount; ++symb) {
-                int group = state_group[state];  // Current state group
-                int new_state = Dtran_[state][symb];
-                int new_group = -1;  // New state group
-                if (new_state != -1) {
-                    new_group = state_group[new_state];
-                    if ((group != new_group) && state_used[group_main_state[new_group]]) {
-                        is_dead = false;
-                        break;
-                    }
+    unsigned group_count = static_cast<unsigned>(
+        std::count_if(group_main_state.begin(), group_main_state.end(), [](int state) { return state >= 0; }));
+
+    std::cout << " - state group count: " << group_count << std::endl;
+
+    auto is_dead_group = [&state_group, &group_main_state, &Dtran = Dtran_, &accept = accept_](unsigned group) {
+        std::vector<bool> is_visited(group_main_state.size(), false);
+        std::vector<unsigned> group_stack;
+        group_stack.reserve(group_main_state.size());
+        group_stack.push_back(group);
+        do {
+            group = group_stack.back();
+            group_stack.pop_back();
+            is_visited[group] = true;
+            for (int next : Dtran[group_main_state[group]]) {  // Add adjucent groups
+                if (next < 0) { continue; }
+                if (accept[next] > 0) { return false; }  // Can lead to accepting state
+                unsigned next_group = state_group[next];
+                if (!is_visited[next_group] && group_main_state[next_group] == next) {
+                    group_stack.push_back(next_group);
                 }
             }
-            if (is_dead) { state_used[state] = false; }  // Delete state
+        } while (!group_stack.empty());
+        return true;
+    };
+
+    // Delete `dead` groups
+    unsigned dead_group_count = 0;
+    for (unsigned group = sc_count_; group < group_main_state.size(); ++group) {
+        if (group_main_state[group] >= 0 && accept_[group_main_state[group]] == 0 && is_dead_group(group)) {
+            group_main_state[group] = -1;  // Mark state group as unused
+            ++dead_group_count;
         }
     }
 
-    // Create optimized Dtran:
-    // Calculate indices of new states
+    std::cout << " - dead group count: " << dead_group_count << std::endl;
+
+    auto get_main_state = [&state_group, &group_main_state](unsigned state) {
+        return group_main_state[state_group[state]];
+    };
+
+    auto is_used_state = [&state_group, &group_main_state, &get_main_state](unsigned state) {
+        return get_main_state(state) == state;
+    };
+
+    // Select new main states
     unsigned new_state_count = 0;
-    std::vector<int> new_state_indices(state_count);
-    for (unsigned state = 0; state < state_count; ++state) {
-        if (state_used[state]) {
-            new_state_indices[state] = new_state_count++;
-        } else {
-            new_state_indices[state] = -1;
-        }
+    std::vector<int> new_state_indices(Dtran_.size());
+    for (unsigned state = 0; state < Dtran_.size(); ++state) {
+        new_state_indices[state] = is_used_state(state) ? new_state_count++ : -1;
     }
+
     // Build optimized DFA table
-    for (unsigned state = 0; state < state_count; ++state) {
-        int new_state_idx = new_state_indices[state];
-        if (new_state_idx != -1) {
+    for (unsigned state = 0; state < Dtran_.size(); ++state) {
+        if (int new_state_idx = new_state_indices[state]; new_state_idx >= 0) {
             for (unsigned symb = 0; symb < kSymbCount; ++symb) {
-                int tran = Dtran_[state][symb];
-                if (tran != -1) { tran = new_state_indices[group_main_state[state_group[tran]]]; }
-                Dtran_[new_state_idx][symb] = tran;
+                int next = Dtran_[state][symb] >= 0 ? get_main_state(Dtran_[state][symb]) : -1;
+                Dtran_[new_state_idx][symb] = next >= 0 ? new_state_indices[next] : -1;
             }
             accept_[new_state_idx] = accept_[state];
             lls_[new_state_idx] = lls_[state];
-        } else {
-            new_state_idx = new_state_indices[group_main_state[state_group[state]]];
-            if (new_state_idx != -1) { lls_[new_state_idx] |= lls_[state]; }
         }
     }
     Dtran_.resize(new_state_count);
