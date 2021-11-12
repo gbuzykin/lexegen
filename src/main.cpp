@@ -261,11 +261,7 @@ int main(int argc, char** argv) {
             std::vector<int> lls_idx, lls_list;
             lls_idx.push_back(0);
             for (size_t i = 0; i < lls.size(); ++i) {
-                int n_pat = lls[i].getFirstValue();
-                while (n_pat != -1) {
-                    lls_list.push_back(n_pat);
-                    n_pat = lls[i].getNextValue(n_pat);
-                }
+                for (unsigned n_pat : lls[i]) { lls_list.push_back(static_cast<int>(n_pat)); }
                 lls_idx.push_back(static_cast<int>(lls_list.size()));
             }
             outputArray(ofile, "accept", accept.begin(), accept.end());

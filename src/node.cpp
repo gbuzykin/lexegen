@@ -42,19 +42,11 @@ void Node::calcFunctions(std::vector<PositionalNode*>& positions) {
 
     switch (type_) {
         case NodeType::kCat: {
-            int p = left_->lastpos_.getFirstValue();
-            while (p != -1) {
-                positions[p]->addFollowpos(right_->firstpos_);
-                p = left_->lastpos_.getNextValue(p);
-            }
+            for (unsigned pos : left_->lastpos_) { positions[pos]->addFollowpos(right_->firstpos_); }
         } break;
         case NodeType::kStar:
         case NodeType::kPlus: {
-            int p = left_->lastpos_.getFirstValue();
-            while (p != -1) {
-                positions[p]->addFollowpos(left_->firstpos_);
-                p = left_->lastpos_.getNextValue(p);
-            }
+            for (unsigned pos : left_->lastpos_) { positions[pos]->addFollowpos(left_->firstpos_); }
         } break;
         default: break;
     }
@@ -88,10 +80,6 @@ void TrailContNode::calcFunctions(std::vector<PositionalNode*>& positions) {
     lastpos_ = right_->getLastpos();
     if (right_->isNullable()) { lastpos_.addValue(position_); }
 
-    int p = left_->getLastpos().getFirstValue();
-    while (p != -1) {
-        positions[p]->addFollowpos(position_);
-        p = left_->getLastpos().getNextValue(p);
-    }
+    for (unsigned pos : left_->getLastpos()) { positions[pos]->addFollowpos(position_); }
     positions[position_]->addFollowpos(right_->getFirstpos());
 }

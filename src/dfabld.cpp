@@ -41,10 +41,8 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
 
     auto calc_eps_closure = [&positions](const ValueSet& T) {
         ValueSet closure = T;
-        int p = T.getFirstValue();
-        while (p != -1) {
-            if (positions[p]->getType() == NodeType::kTrailCont) { closure |= positions[p]->getFollowpos(); }
-            p = T.getNextValue(p);
+        for (unsigned pos : T) {
+            if (positions[pos]->getType() == NodeType::kTrailCont) { closure |= positions[pos]->getFollowpos(); }
         }
         return closure;
     };
@@ -95,10 +93,8 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
             if (case_insensitive && std::islower(symb)) { continue; }
 
             ValueSet U;
-            int p = T.getFirstValue();
-            while (p != -1) {
-                if (node_contains_symb(positions[p], symb)) { U |= positions[p]->getFollowpos(); }
-                p = T.getNextValue(p);
+            for (unsigned pos : T) {
+                if (node_contains_symb(positions[pos], symb)) { U |= positions[pos]->getFollowpos(); }
             }
 
             if (!U.empty()) {
@@ -117,27 +113,23 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
     } while (pending_states.size() > 0);
 
     auto get_accept = [&positions](const ValueSet& T) -> int {
-        int p = T.getFirstValue();
-        while (p != -1) {
-            if (positions[p]->getType() == NodeType::kTerm) {
-                return static_cast<const TermNode*>(positions[p])->getPatternNo();
+        for (unsigned pos : T) {
+            if (positions[pos]->getType() == NodeType::kTerm) {
+                return static_cast<const TermNode*>(positions[pos])->getPatternNo();
             }
-            p = T.getNextValue(p);
         }
         return 0;
     };
 
     auto get_lls_patterns = [&positions](const ValueSet& T) {
         ValueSet patterns;
-        int position_count = static_cast<int>(positions.size());
-        int p = T.getFirstValue();
-        while (p != -1) {
+        unsigned position_count = static_cast<unsigned>(positions.size());
+        for (unsigned pos : T) {
             // Termination node should have the next position number
-            if (positions[p]->getType() == NodeType::kTrailCont && p + 1 < position_count &&
-                positions[p + 1]->getType() == NodeType::kTerm) {
-                patterns.addValue(static_cast<const TermNode*>(positions[p + 1])->getPatternNo());
+            if (positions[pos]->getType() == NodeType::kTrailCont && pos + 1 < position_count &&
+                positions[pos + 1]->getType() == NodeType::kTerm) {
+                patterns.addValue(static_cast<const TermNode*>(positions[pos + 1])->getPatternNo());
             }
-            p = T.getNextValue(p);
         }
         return patterns;
     };
