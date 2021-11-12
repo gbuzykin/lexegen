@@ -7,24 +7,27 @@
 #include <stdexcept>
 
 void DfaBuilder::addPattern(std::unique_ptr<Node> syn_tree, const ValueSet& sc) {
-    int pattern_count = (int)patterns_.size();
-    if (pattern_count > ValueSet::kMaxValue) { throw std::runtime_error("too many patterns"); }
+    unsigned n_pat = 1 + static_cast<unsigned>(patterns_.size());
+    if (n_pat > ValueSet::kMaxValue) { throw std::runtime_error("too many patterns"); }
     auto cat_node = std::make_unique<Node>(NodeType::kCat);
-    if (syn_tree->getType() == NodeType::kTrailCont) {
-        // Pattern with trailing context
-        static_cast<TrailContNode*>(syn_tree.get())->setPatternNo(pattern_count);
-        cat_node->setRight(std::make_unique<TermNode>(kTrailContBit | pattern_count));  // Add $end node
-    } else {
-        cat_node->setRight(std::make_unique<TermNode>(pattern_count));  // Add $end node
-    }
+    cat_node->setRight(std::make_unique<TermNode>(n_pat));  // Add $end node
     cat_node->setLeft(std::move(syn_tree));
     patterns_.emplace_back(std::move(cat_node));
     sc_.push_back(sc);
 }
 
+bool DfaBuilder::isPatternWithTrailCont(unsigned n_pat) const {
+    for (const auto& pat : patterns_) {
+        if (static_cast<const TermNode*>(pat->getRight())->getPatternNo() == n_pat &&
+            pat->getLeft()->getType() == NodeType::kTrailCont) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void DfaBuilder::build(std::vector<std::vector<int>>& Dtran, std::vector<int>& accept, std::vector<ValueSet>& lls) {
-    scatterPositions();
-    calcFunctions();
+    for (int i = 0; i < (int)patterns_.size(); i++) { patterns_[i]->calcFunctions(positions_); }
     // Build DFA:
     accept.clear();
     // Unmarked states
@@ -38,7 +41,7 @@ void DfaBuilder::build(std::vector<std::vector<int>>& Dtran, std::vector<int>& a
         }
         int S_idx;
         addState(states, Dtran, S, S_idx, false);
-        accept.push_back(-1);
+        accept.push_back(0);
         lls.push_back(ValueSet());
         unmarked_states.push_back(S_idx);
     }
@@ -48,10 +51,10 @@ void DfaBuilder::build(std::vector<std::vector<int>>& Dtran, std::vector<int>& a
         int T_idx = unmarked_states.back();
         unmarked_states.pop_back();
         ValueSet T = states[T_idx];
-        accept[T_idx] = isAcceptingState(T);  // Check for accepting state
+        accept[T_idx] = getAccept(T);  // Check for accepting state
 
         ValueSet patterns;
-        if (isLastLexemeState(T, patterns)) { lls[T_idx] |= patterns; }  // Check for last lexeme state
+        if (getLlsPatterns(T, patterns)) { lls[T_idx] |= patterns; }  // Check for last lexeme state
         for (int ch = 0; ch < (int)Dtran[T_idx].size(); ch++) {
             ValueSet U;
             if (!case_sensitive_ && std::islower(ch)) { continue; }
@@ -77,14 +80,14 @@ void DfaBuilder::build(std::vector<std::vector<int>>& Dtran, std::vector<int>& a
                     }
                 }
 
-                if (incl_pos) { U |= followpos_[p]; }  // Add followpos(p) to U
+                if (incl_pos) { U |= positions_[p]->getFollowpos(); }  // Add followpos(p) to U
                 p = T.getNextValue(p);
             }
 
             if (!U.empty()) {
                 int U_idx;
                 if (addState(states, Dtran, U, U_idx)) {  // New state added
-                    accept.push_back(-1);
+                    accept.push_back(0);
                     lls.push_back(ValueSet());
                     unmarked_states.push_back(U_idx);
                 }
@@ -123,7 +126,7 @@ void DfaBuilder::optimize(std::vector<std::vector<int>>& Dtran, std::vector<int>
                 for (int ch = 0; ch < (int)Dtran[cur_state].size(); ch++) {
                     int new_state = Dtran[cur_state][ch];
                     if (new_state != -1) {
-                        if (accept[new_state] != -1) {
+                        if (accept[new_state] > 0) {
                             is_dead = false;
                             break;
                         }
@@ -142,8 +145,8 @@ void DfaBuilder::optimize(std::vector<std::vector<int>>& Dtran, std::vector<int>
             }
         } else if (state < sc_count_) {
             group_no = state;
-        } else if (accept[state] != -1) {
-            group_no = sc_count_ + (accept[state] & ~kTrailContBit);
+        } else if (accept[state] > 0) {
+            group_no = sc_count_ + accept[state] - 1;
         }
         if (group_main_state[group_no] == -1) {
             group_main_state[group_no] = state;
@@ -188,7 +191,7 @@ void DfaBuilder::optimize(std::vector<std::vector<int>>& Dtran, std::vector<int>
     // Delete 'dead' states
     for (state = 0; state < state_count; state++) {
         bool is_dead = true;
-        if (state_used[state] && (state >= sc_count_) && (accept[state] == -1)) {  // Is not start or accepting state
+        if (state_used[state] && (state >= sc_count_) && (accept[state] == 0)) {  // Is not start or accepting state
             // Check for 'dead' state
             for (int ch = 0; ch < (int)Dtran[state].size(); ch++) {
                 int group = state_group[state];  // Current state group
@@ -381,126 +384,13 @@ void DfaBuilder::compressDtran(const std::vector<std::vector<int>>& Dtran, std::
 ///////////////////////////////////////////////////////////////////////////////
 // DfaBuilder private/protected methods
 
-void DfaBuilder::scatterPositions() {
-    positions_.clear();
-    for (int i = 0; i < (int)patterns_.size(); i++) {
-        // Node stack
-        std::vector<Node*> node_stack;
-        auto* root = patterns_[i].get();
-        root->setMark(false);
-        node_stack.push_back(root);
-        while (node_stack.size() > 0) {
-            // Get next node
-            Node* node = node_stack.back();
-            node_stack.pop_back();
-            Node* left = node->getLeft();
-            Node* right = node->getRight();
-            if (node->getMark()) {
-                // Just put position
-                if (positions_.size() > ValueSet::kMaxValue) { throw std::runtime_error("too many positions"); }
-                node->setPosition((int)positions_.size());
-                positions_.push_back(node);
-            } else {
-                // Add right child node to stack
-                if (right) { node_stack.push_back(right); }
-                // Add marked node (the node which needs position)
-                switch (node->getType()) {
-                    case NodeType::kSymbol:
-                    case NodeType::kSymbSet:
-                    case NodeType::kTrailCont:
-                    case NodeType::kTerm: {
-                        node->setMark(true);
-                        node_stack.push_back(node);
-                    } break;
-                }
-                // Add left child node to stack
-                if (left) { node_stack.push_back(left); }
-            }
-        }
-    }
-}
-
-void DfaBuilder::calcFunctions() {
-    // Calculate nullable(node), firstpos(node),
-    // lastpos(node) and followpos(pos) functions:
-    int position_count = (int)positions_.size();
-    followpos_.resize(position_count);
-    for (int i = 0; i < (int)patterns_.size(); i++) {
-        // Node stack
-        std::vector<Node*> node_stack;
-        // Add unmarked node to stack
-        auto* root = patterns_[i].get();
-        root->setMark(false);
-        node_stack.push_back(root);
-        while (node_stack.size() > 0) {
-            // Get next node
-            auto* node = node_stack.back();
-            auto* left = node->getLeft();
-            auto* right = node->getRight();
-            if (!node->getMark() && (left || right)) {
-                // Add unmarked child nodes to stack
-                if (right) {
-                    right->setMark(false);
-                    node_stack.push_back(right);
-                }
-                if (left) {
-                    left->setMark(false);
-                    node_stack.push_back(left);
-                }
-                node->setMark(true);  // Mark node
-            } else {
-                // Child functions are calculated
-                NodeType type = node->getType();
-                switch (type) {
-                    case NodeType::kCat: {
-                        assert(left);
-                        assert(right);
-                        const ValueSet& left_lastpos = left->getLastpos();
-                        const ValueSet& right_firstpos = right->getFirstpos();
-                        int p = left_lastpos.getFirstValue();
-                        while (p != -1) {
-                            followpos_[p] |= right_firstpos;
-                            p = left_lastpos.getNextValue(p);
-                        }
-                    } break;
-                    case NodeType::kStar:
-                    case NodeType::kPlus: {
-                        assert(left);
-                        const ValueSet& left_lastpos = left->getLastpos();
-                        const ValueSet& left_firstpos = left->getFirstpos();
-                        int p = left_lastpos.getFirstValue();
-                        while (p != -1) {
-                            followpos_[p] |= left_firstpos;
-                            p = left_lastpos.getNextValue(p);
-                        }
-                    } break;
-                    case NodeType::kTrailCont: {
-                        assert(left);
-                        assert(right);
-                        const ValueSet& left_lastpos = left->getLastpos();
-                        const ValueSet& right_firstpos = right->getFirstpos();
-                        int p = left_lastpos.getFirstValue();
-                        while (p != -1) {
-                            followpos_[p].addValue(node->getPosition());
-                            p = left_lastpos.getNextValue(p);
-                        }
-                        followpos_[node->getPosition()] |= right_firstpos;
-                    } break;
-                }
-                node->calcFunctions();
-                node_stack.pop_back();
-            }
-        }
-    }
-}
-
 bool DfaBuilder::addState(std::vector<ValueSet>& states, std::vector<std::vector<int>>& Dtran, const ValueSet& U,
                           int& U_idx, bool find_equal) {
     // Calculate eps-closure of the state
     ValueSet closedU = U;
     int p = U.getFirstValue();
     while (p != -1) {
-        if (positions_[p]->getType() == NodeType::kTrailCont) { closedU |= followpos_[p]; }
+        if (positions_[p]->getType() == NodeType::kTrailCont) { closedU |= positions_[p]->getFollowpos(); }
         p = U.getNextValue(p);
     }
 
@@ -517,24 +407,26 @@ bool DfaBuilder::addState(std::vector<ValueSet>& states, std::vector<std::vector
     return true;
 }
 
-int DfaBuilder::isAcceptingState(const ValueSet& T) {
+int DfaBuilder::getAccept(const ValueSet& T) {
     int p = T.getFirstValue();
     while (p != -1) {
-        const auto* pos_node = positions_[p];
-        if (pos_node->getType() == NodeType::kTerm) { return static_cast<const TermNode*>(pos_node)->getPatternNo(); }
+        if (positions_[p]->getType() == NodeType::kTerm) {
+            return static_cast<const TermNode*>(positions_[p])->getPatternNo();
+        }
         p = T.getNextValue(p);
     }
-    return -1;
+    return 0;
 }
 
-bool DfaBuilder::isLastLexemeState(const ValueSet& T, ValueSet& patterns) {
+bool DfaBuilder::getLlsPatterns(const ValueSet& T, ValueSet& patterns) {
     patterns.clear();
+    int position_count = static_cast<int>(positions_.size());
     int p = T.getFirstValue();
     while (p != -1) {
-        const auto* pos_node = positions_[p];
-        assert(pos_node);
-        if (pos_node->getType() == NodeType::kTrailCont) {
-            patterns.addValue(static_cast<const TrailContNode*>(pos_node)->getPatternNo() & ~kTrailContBit);
+        // Termination node should have the next position number
+        if (positions_[p]->getType() == NodeType::kTrailCont && p + 1 < position_count &&
+            positions_[p + 1]->getType() == NodeType::kTerm) {
+            patterns.addValue(static_cast<const TermNode*>(positions_[p + 1])->getPatternNo());
         }
         p = T.getNextValue(p);
     }

@@ -3,6 +3,7 @@
 #include "valset.h"
 
 #include <memory>
+#include <vector>
 
 // Node types
 enum class NodeType {
@@ -14,9 +15,11 @@ enum class NodeType {
     kSymbol,     // Symbol
     kSymbSet,    // Symbol set
     kEmptySymb,  // Empty symbol
-    kTrailCont,  // Trailling context
+    kTrailCont,  // Trailing context
     kTerm        // Termination symbol
 };
+
+class PositionalNode;
 
 // Common node class
 class Node {
@@ -25,10 +28,6 @@ class Node {
     virtual ~Node() = default;
 
     NodeType getType() const { return type_; };
-    int getPosition() const { return position_; };
-    void setPosition(int pos) { position_ = pos; };
-    bool getMark() const { return mark_; };
-    void setMark(bool mark) { mark_ = mark; };
     Node* getLeft() const { return left_.get(); };
     void setLeft(std::unique_ptr<Node> left) { left_ = std::move(left); };
     Node* getRight() const { return right_.get(); };
@@ -39,12 +38,10 @@ class Node {
     std::unique_ptr<Node> cloneTree() const;
 
     virtual std::unique_ptr<Node> clone() const { return std::make_unique<Node>(type_); };
-    virtual void calcFunctions();
+    virtual void calcFunctions(std::vector<PositionalNode*>& positions);
 
  protected:
     NodeType type_;
-    bool mark_ = false;                   // Node mark
-    int position_ = -1;                   // Leaf position
     std::unique_ptr<Node> left_, right_;  // Binary tree leaves
     // Node functions:
     bool nullable_ = false;  // nullable(node) function
@@ -52,59 +49,65 @@ class Node {
     ValueSet lastpos_;       // lastpos(node) function
 };
 
-// Symbol node class
-class SymbNode : public Node {
- public:
-    explicit SymbNode(char symb) : Node(NodeType::kSymbol), symb_(symb) {}
-    char getSymbol() const { return symb_; };
-    std::unique_ptr<Node> clone() const override { return std::make_unique<SymbNode>(symb_); };
-    void calcFunctions() override;
-
- protected:
-    char symb_;  // Node symbol
-};
-
-// Symbol set node class
-class SymbSetNode : public Node {
- public:
-    explicit SymbSetNode(const ValueSet& sset) : Node(NodeType::kSymbSet), sset_(sset) {}
-    const ValueSet& getSymbSet() const { return sset_; };
-    std::unique_ptr<Node> clone() const override { return std::make_unique<SymbSetNode>(sset_); };
-    void calcFunctions() override;
-
- protected:
-    ValueSet sset_;
-};
-
 // Empty symbol node class
 class EmptySymbNode : public Node {
  public:
     EmptySymbNode() : Node(NodeType::kEmptySymb) {}
     std::unique_ptr<Node> clone() const override { return std::make_unique<EmptySymbNode>(); };
-    void calcFunctions() override;
+    void calcFunctions(std::vector<PositionalNode*>& positions) override;
+};
+
+// Positional node class
+class PositionalNode : public Node {
+ public:
+    explicit PositionalNode(NodeType type) : Node(type) {}
+    void calcFunctions(std::vector<PositionalNode*>& positions) override;
+    const ValueSet& getFollowpos() const { return followpos_; };
+    void addFollowpos(unsigned pos) { followpos_.addValue(pos); };
+    void addFollowpos(const ValueSet& pos_set) { followpos_ |= pos_set; };
+
+ protected:
+    unsigned position_ = 0;  // Node position
+    ValueSet followpos_;     // followpos(node) function
+};
+
+// Symbol node class
+class SymbNode : public PositionalNode {
+ public:
+    explicit SymbNode(unsigned symb) : PositionalNode(NodeType::kSymbol), symb_(symb) {}
+    unsigned getSymbol() const { return symb_; };
+    std::unique_ptr<Node> clone() const override { return std::make_unique<SymbNode>(symb_); };
+
+ protected:
+    unsigned symb_;  // Node symbol
+};
+
+// Symbol set node class
+class SymbSetNode : public PositionalNode {
+ public:
+    explicit SymbSetNode(const ValueSet& sset) : PositionalNode(NodeType::kSymbSet), sset_(sset) {}
+    const ValueSet& getSymbSet() const { return sset_; };
+    std::unique_ptr<Node> clone() const override { return std::make_unique<SymbSetNode>(sset_); };
+
+ protected:
+    ValueSet sset_;
 };
 
 // Trailing context node
-class TrailContNode : public Node {
+class TrailContNode : public PositionalNode {
  public:
-    explicit TrailContNode(int pat_no) : Node(NodeType::kTrailCont), pattern_no_(pat_no) {}
-    int getPatternNo() const { return pattern_no_; };
-    void setPatternNo(int pat_no) { pattern_no_ = pat_no; };
-    std::unique_ptr<Node> clone() const override { return std::make_unique<TrailContNode>(pattern_no_); };
-    void calcFunctions() override;
-
- protected:
-    int pattern_no_;
+    TrailContNode() : PositionalNode(NodeType::kTrailCont) {}
+    std::unique_ptr<Node> clone() const override { return std::make_unique<TrailContNode>(); };
+    void calcFunctions(std::vector<PositionalNode*>& positions) override;
 };
 
 // Termination node class
-class TermNode : public Node {
+class TermNode : public PositionalNode {
  public:
-    explicit TermNode(int pat_no) : Node(NodeType::kTerm), pattern_no_(pat_no) {}
-    int getPatternNo() const { return pattern_no_; };
+    explicit TermNode(unsigned pat_no) : PositionalNode(NodeType::kTerm), pattern_no_(pat_no) {}
+    unsigned getPatternNo() const { return pattern_no_; };
     std::unique_ptr<Node> clone() const override { return std::make_unique<TermNode>(pattern_no_); };
-    void calcFunctions() override;
 
  protected:
-    int pattern_no_;
+    unsigned pattern_no_;
 };

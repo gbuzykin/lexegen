@@ -108,9 +108,8 @@ static int check[1244] = {
 };
 
 static int accept[59] = {
-    -1, 15, -1, -1, 28, 32770, 18, 27, 32770, -1, -1, -1, -1, 32768, -1, -1, -1, -1, 1, 32770, 17, 15, 16, 3, 26, 14,
-    -1, 13, 6, 7, 8, 10, 9, 11, 12, -1, -1, 5, -1, 4, 26, 24, 25, 26, 26, 22, 23, 21, -1, -1, -1, -1, -1, 19, -1, -1,
-    -1, -1, 20
+    0, 64, 0, 0, 117, 15, 76, 113, 14, 0, 0, 0, 0, 7, 0, 0, 0, 0, 9, 14, 73, 64, 69, 17, 108, 61, 0, 57, 29, 33, 37, 45,
+    41, 49, 53, 0, 0, 25, 0, 21, 109, 101, 105, 108, 108, 92, 96, 89, 0, 0, 0, 0, 0, 81, 0, 0, 0, 0, 85
 };
 
 static int lls_idx[60] = {
@@ -119,10 +118,11 @@ static int lls_idx[60] = {
 };
 
 static int lls_list[3] = {
-    2, 2, 0
+    3, 3, 1
 };
 
 int lex(StateData& data, int state) {
+    enum { kDeadFlag = 1, kTrailContFlag = 2, kFlagCount = 2 };
     data.pat_length = 0;
     data.state_stack.clear();
 
@@ -145,24 +145,25 @@ int lex(StateData& data, int state) {
         data.text[data.pat_length++] = symb;
         ++data.unread_text;
         data.state_stack.push_back(state);
-    } while (symb != 0);
+    } while (symb != 0 && !(accept[state] & kDeadFlag));
 
     // Unroll downto last accepting state
     while (!data.state_stack.empty()) {
-        int pat = accept[data.state_stack.back()];
-        if (pat >= 0) {
-            if (pat & 0x8000) {
-                pat ^= 0x8000;
+        int n_pat = accept[data.state_stack.back()];
+        if (n_pat > 0) {
+            bool has_trailling_context = n_pat & kTrailContFlag;
+            n_pat >>= kFlagCount;
+            if (has_trailling_context) {
                 do {
                     state = data.state_stack.back();
                     for (int i = lls_idx[state]; i < lls_idx[state + 1]; ++i) {
-                        if (lls_list[i] == pat) { return pat; }
+                        if (lls_list[i] == n_pat) { return n_pat; }
                     }
                     *(--data.unread_text) = data.text[--data.pat_length];
                     data.state_stack.pop_back();
                 } while (!data.state_stack.empty());
             }
-            return pat;
+            return n_pat;
         }
         *(--data.unread_text) = data.text[--data.pat_length];
         data.state_stack.pop_back();
@@ -170,5 +171,5 @@ int lex(StateData& data, int state) {
 
     // Default pattern
     data.text[data.pat_length++] = *data.unread_text++;
-    return -1;
+    return predef_pat_default;
 }

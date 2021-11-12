@@ -95,7 +95,7 @@ std::unique_ptr<Node> REParser::parse(const std::map<std::string, std::unique_pt
         } else if ((cur_symb & 0x3000) == 0x2000) {  // Action
             switch (cur_symb & 0xFFF) {
                 case 0: {  // Trailing context
-                    auto trail_cont_node = std::make_unique<TrailContNode>(-1);
+                    auto trail_cont_node = std::make_unique<TrailContNode>();
                     trail_cont_node->setRight(std::move(node_stack.back()));
                     node_stack.pop_back();
                     trail_cont_node->setLeft(std::move(node_stack.back()));
