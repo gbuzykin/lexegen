@@ -151,12 +151,12 @@ int main(int argc, char** argv) {
                 static const char* text[] = {
                     "Usage: lexegen [options] file",
                     "Options:",
-                    "    -o <file>           Place the output analyzer into <file>.",
-                    "    -h <file>           Place the output definitions into <file>.",
-                    "    --no-case           Build case insensitive analyzer.",
-                    "    --no-compress       Do not compress analyzer table.",
-                    "    -O0                 Do not optimize analyzer.",
-                    "    --help              Display this information.",
+                    "    -o <file>      Place the output analyzer into <file>.",
+                    "    -h <file>      Place the output definitions into <file>.",
+                    "    --no-case      Build case insensitive analyzer.",
+                    "    --no-compress  Do not compress analyzer table.",
+                    "    -O0            Do not optimize analyzer.",
+                    "    --help         Display this information.",
                 };
                 // clang-format on
                 for (const char* l : text) { std::cout << l << std::endl; }
@@ -164,19 +164,19 @@ int main(int argc, char** argv) {
             } else if (arg[0] != '-') {
                 input_file_name = argv[i];
             } else {
-                std::cerr << "lexegen: unknown flag `" << arg << "`." << std::endl;
+                Log(Log::MsgType::kFatal) << "unknown flag \'" << arg << "\'";
                 return -1;
             }
         }
 
         if (input_file_name.empty()) {
-            std::cerr << "lexegen: no input file specified." << std::endl;
+            Log(Log::MsgType::kFatal) << "no input file specified";
             return -1;
         }
 
         std::ifstream ifile(input_file_name);
         if (!ifile) {
-            std::cerr << "lexegen: cannot open input file `" << input_file_name << "`." << std::endl;
+            Log(Log::MsgType::kFatal) << "can\'t open input file \'" << input_file_name << "\'";
             return -1;
         }
 
@@ -213,7 +213,7 @@ int main(int argc, char** argv) {
             }
             outputLexDefs(ofile);
         } else {
-            std::cerr << "lexegen: cannot open output file `" << defs_file_name << "`." << std::endl;
+            Log(Log::MsgType::kError) << "can\'t open output file \'" << defs_file_name << "\'";
         }
 
         if (std::ofstream ofile(analyzer_file_name); ofile) {
@@ -263,10 +263,10 @@ int main(int argc, char** argv) {
             outputArray(ofile, "lls_list", lls_list.begin(), lls_list.end());
             outputLexEngine(ofile, no_compress);
         } else {
-            std::cerr << "lexegen: cannot open output file `" << analyzer_file_name << "`." << std::endl;
+            Log(Log::MsgType::kError) << "can\'t open output file \'" << analyzer_file_name << "\'";
         }
 
         return 0;
-    } catch (const std::exception& e) { std::cerr << "lexegen: exception catched: " << e.what() << "." << std::endl; }
+    } catch (const std::exception& e) { Log(Log::MsgType::kFatal) << "exception catched: " << e.what(); }
     return -1;
 }

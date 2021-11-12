@@ -39,7 +39,39 @@ namespace parser_detail {
 #include "parser_defs.h"
 }
 
+struct TokenLoc {
+    unsigned n_line = 0;
+    unsigned n_col = 0;
+};
+
 class Node;
+class Parser;
+
+class Log {
+ public:
+    enum class MsgType { kDebug = 0, kInfo, kWarning, kError, kFatal };
+
+    explicit Log(MsgType type) : type_(type) {}
+    Log(MsgType type, const Parser* parser) : type_(type), parser_(parser) {}
+    Log(MsgType type, const Parser* parser, const TokenLoc& l) : type_(type), parser_(parser), loc_(l) {}
+    ~Log() { printMessage(type_, loc_, ss_.str()); }
+    Log(const Log&) = delete;
+    Log& operator=(const Log&) = delete;
+
+    template<typename Ty>
+    Log& operator<<(const Ty& v) {
+        ss_ << v;
+        return *this;
+    }
+    void printMessage(MsgType type, const TokenLoc& l, const std::string& msg);
+    operator int() const { return -1; }
+
+ private:
+    MsgType type_ = MsgType::kDebug;
+    const Parser* parser_ = nullptr;
+    TokenLoc loc_;
+    std::stringstream ss_;
+};
 
 // Input file parser class
 class Parser {
@@ -52,40 +84,23 @@ class Parser {
 
     Parser(std::istream& input, std::string file_name);
     int parse();
+    std::string_view getFileName() const { return file_name_; }
+    std::string_view getCurrentLine() const { return current_line_; }
     const std::vector<Pattern>& getPatterns() const { return patterns_; }
     const std::vector<std::string>& getStartConditions() const { return start_conditions_; }
     std::unique_ptr<Node> extractPatternTree(size_t n) { return std::move(patterns_[n].syn_tree); }
 
  private:
     struct TokenInfo {
-        unsigned n_col = 0;
+        TokenLoc loc;
         std::variant<unsigned, std::string_view, ValueSet> val;
-    };
-
-    struct ErrorLogger {
-        const Parser* parser;
-        std::stringstream ss;
-        explicit ErrorLogger(const Parser* in_parser) : parser(in_parser) {}
-        ErrorLogger(ErrorLogger&& el) noexcept : parser(el.parser) { el.parser = nullptr; }
-        ~ErrorLogger() {
-            if (parser) { parser->printError(ss.str()); }
-        }
-        ErrorLogger(const ErrorLogger&) = delete;
-        ErrorLogger& operator=(const ErrorLogger&) = delete;
-        ErrorLogger& operator=(ErrorLogger&&) = delete;
-        template<typename Ty>
-        ErrorLogger& operator<<(const Ty& v) {
-            ss << v;
-            return *this;
-        }
-        operator int() const { return -1; }
     };
 
     std::istream& input_;
     std::string file_name_;
     std::unique_ptr<char[]> text_;
     std::string current_line_;
-    unsigned n_line_ = 1, n_col_ = 1;
+    TokenLoc loc_{1, 1};
     std::vector<int> sc_stack_;
     lex_detail::CtxData lex_ctx_;
     std::vector<int> lex_state_stack_;
@@ -105,7 +120,7 @@ class Parser {
     }
 
     int lex();
+    Log logWarning() const { return Log(Log::MsgType::kWarning, this, tkn_.loc); }
+    Log logError() const { return Log(Log::MsgType::kError, this, tkn_.loc); }
     int logSyntaxError(int tt) const;
-    ErrorLogger logError() const { return ErrorLogger(this); }
-    void printError(const std::string& msg) const;
 };
