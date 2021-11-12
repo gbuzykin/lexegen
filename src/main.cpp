@@ -187,13 +187,13 @@ int main(int argc, char** argv) {
         const auto& patterns = parser.getPatterns();
         const auto& start_conditions = parser.getStartConditions();
 
-        DfaBuilder dfa_builder(case_insensitive, static_cast<int>(start_conditions.size()));
+        DfaBuilder dfa_builder;
         for (size_t i = 0; i < patterns.size(); ++i) {
             dfa_builder.addPattern(parser.extractPatternTree(i), patterns[i].sc);
         }
 
         // Build lexer
-        dfa_builder.build();
+        dfa_builder.build(static_cast<unsigned>(start_conditions.size()), case_insensitive);
         if (optimization_level > 0) { dfa_builder.optimize(); }
 
         if (std::ofstream ofile(defs_file_name); ofile) {
@@ -221,7 +221,8 @@ int main(int argc, char** argv) {
             if (no_compress) {
                 if (!Dtran.empty()) {
                     ofile << std::endl
-                          << "static int Dtran[" << Dtran.size() << "][" << Dtran[0].size() << "] = {" << std::endl;
+                          << "static int Dtran[" << Dtran.size() << "][" << DfaBuilder::kSymbCount << "] = {"
+                          << std::endl;
                     for (size_t j = 0; j < Dtran.size(); ++j) {
                         ofile << (j == 0 ? "    {" : ", {") << std::endl;
                         outputData(ofile, Dtran[j].begin(), Dtran[j].end(), 8);

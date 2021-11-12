@@ -2,6 +2,7 @@
 
 #include "node.h"
 
+#include <algorithm>
 #include <cctype>
 #include <iostream>
 #include <map>
@@ -17,89 +18,136 @@ void DfaBuilder::addPattern(std::unique_ptr<Node> syn_tree, const ValueSet& sc) 
 }
 
 bool DfaBuilder::isPatternWithTrailCont(unsigned n_pat) const {
-    for (const auto& pat : patterns_) {
-        if (static_cast<const TermNode*>(pat.syn_tree->getRight())->getPatternNo() == n_pat &&
-            pat.syn_tree->getLeft()->getType() == NodeType::kTrailCont) {
-            return true;
-        }
-    }
-    return false;
+    return std::any_of(patterns_.begin(), patterns_.end(), [n_pat](const auto& pat) {
+        return static_cast<const TermNode*>(pat.syn_tree->getRight())->getPatternNo() == n_pat &&
+               pat.syn_tree->getLeft()->getType() == NodeType::kTrailCont;
+    });
 }
 
-void DfaBuilder::build() {
+void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
     std::cout << "Building lexer..." << std::endl;
 
-    for (size_t pat_no = 0; pat_no < patterns_.size(); ++pat_no) {
-        patterns_[pat_no].syn_tree->calcFunctions(positions_);
-    }
+    std::vector<PositionalNode*> positions;
+    std::vector<ValueSet> states;
+    sc_count_ = sc_count;
+    case_insensitive_ = case_insensitive;
+
+    // Scatter positions and calculate node functions
+    for (const auto& pat : patterns_) { pat.syn_tree->calcFunctions(positions); }
 
     std::cout << " - pattern count: " << patterns_.size() << std::endl;
     std::cout << " - S-state count: " << sc_count_ << std::endl;
-    std::cout << " - position count: " << positions_.size() << std::endl;
+    std::cout << " - position count: " << positions.size() << std::endl;
+
+    auto calc_eps_closure = [&positions](const ValueSet& T) {
+        ValueSet closure = T;
+        int p = T.getFirstValue();
+        while (p != -1) {
+            if (positions[p]->getType() == NodeType::kTrailCont) { closure |= positions[p]->getFollowpos(); }
+            p = T.getNextValue(p);
+        }
+        return closure;
+    };
+
+    auto add_state = [&Dtran = Dtran_, &states](const ValueSet& T) {
+        states.push_back(T);
+        Dtran.emplace_back();
+        Dtran.back().fill(-1);
+        return static_cast<unsigned>(states.size()) - 1;
+    };
+
+    std::vector<unsigned> pending_states;
+    states.reserve(100 * sc_count_);
+    Dtran_.reserve(100 * sc_count_);
+    pending_states.reserve(100 * sc_count_);
 
     // Add start states
-    std::vector<unsigned> pending_states;
     for (unsigned sc = 0; sc < sc_count_; ++sc) {
         ValueSet S;
-        for (size_t pat_no = 0; pat_no < patterns_.size(); ++pat_no) {
-            if (patterns_[pat_no].sc.contains(sc)) { S |= patterns_[pat_no].syn_tree->getFirstpos(); }
+        for (const auto& pat : patterns_) {
+            if (pat.sc.contains(sc)) { S |= pat.syn_tree->getFirstpos(); }
         }
-        unsigned S_idx = 0;
-        addState(S, S_idx, false);
-        accept_.push_back(0);
-        lls_.push_back(ValueSet());
-        pending_states.push_back(S_idx);
+        pending_states.push_back(add_state(calc_eps_closure(S)));
     }
-    // Build DFA
+
+    // Calculate other states and build DFA
     do {
-        // Get unmarked state
         unsigned T_idx = pending_states.back();
         pending_states.pop_back();
-        ValueSet T = states_[T_idx];
-        accept_[T_idx] = getAccept(T);  // Check for accepting state
 
-        ValueSet patterns;
-        if (getLlsPatterns(T, patterns)) { lls_[T_idx] |= patterns; }  // Check for last lexeme state
-        for (unsigned symb = 0; symb < static_cast<unsigned>(Dtran_[T_idx].size()); ++symb) {
+        auto node_contains_symb = [case_insensitive](const auto* pos_node, unsigned symb) {
+            auto type = pos_node->getType();
+            if (type == NodeType::kSymbol) {
+                const auto* symb_node = static_cast<const SymbNode*>(pos_node);
+                return symb_node->getSymbol() == symb ||
+                       (case_insensitive && symb_node->getSymbol() == std::tolower(symb));
+            } else if (type == NodeType::kSymbSet) {
+                const auto* sset_node = static_cast<const SymbSetNode*>(pos_node);
+                return sset_node->getSymbSet().contains(symb) ||
+                       (case_insensitive && sset_node->getSymbSet().contains(std::tolower(symb)));
+            }
+            return false;
+        };
+
+        ValueSet T = states[T_idx];
+
+        for (unsigned symb = 0; symb < kSymbCount; ++symb) {
+            if (case_insensitive && std::islower(symb)) { continue; }
+
             ValueSet U;
-            if (case_insensitive_ && std::islower(symb)) { continue; }
-            // Look through all positions in state T
             int p = T.getFirstValue();
             while (p != -1) {
-                const auto* pos_node = positions_[p];
-                bool incl_pos = false;
-                auto type = pos_node->getType();
-                if (type == NodeType::kSymbol) {
-                    const auto* symb_node = static_cast<const SymbNode*>(pos_node);
-                    if (symb_node->getSymbol() == symb) {
-                        incl_pos = true;
-                    } else if (case_insensitive_ && (symb_node->getSymbol() == std::tolower(symb))) {
-                        incl_pos = true;
-                    }
-                } else if (type == NodeType::kSymbSet) {
-                    const auto* sset_node = static_cast<const SymbSetNode*>(pos_node);
-                    if (sset_node->getSymbSet().contains(symb)) {
-                        incl_pos = true;
-                    } else if (case_insensitive_ && sset_node->getSymbSet().contains(std::tolower(symb))) {
-                        incl_pos = true;
-                    }
-                }
-
-                if (incl_pos) { U |= positions_[p]->getFollowpos(); }  // Add followpos(p) to U
+                if (node_contains_symb(positions[p], symb)) { U |= positions[p]->getFollowpos(); }
                 p = T.getNextValue(p);
             }
 
             if (!U.empty()) {
-                unsigned U_idx = 0;
-                if (addState(U, U_idx)) {  // New state added
-                    accept_.push_back(0);
-                    lls_.push_back(ValueSet());
-                    pending_states.push_back(U_idx);
+                auto U_closure = calc_eps_closure(U);
+                if (auto found = std::find(states.begin(), states.end(), U_closure); found != states.end()) {
+                    Dtran_[T_idx][symb] = static_cast<unsigned>(found - states.begin());
+                } else {
+                    pending_states.push_back(Dtran_[T_idx][symb] = add_state(U_closure));
                 }
-                Dtran_[T_idx][symb] = U_idx;
             }
         }
+
+        if (case_insensitive) {
+            for (unsigned symb = 'a'; symb <= 'z'; ++symb) { Dtran_[T_idx][symb] = Dtran_[T_idx][std::toupper(symb)]; }
+        }
     } while (pending_states.size() > 0);
+
+    auto get_accept = [&positions](const ValueSet& T) -> int {
+        int p = T.getFirstValue();
+        while (p != -1) {
+            if (positions[p]->getType() == NodeType::kTerm) {
+                return static_cast<const TermNode*>(positions[p])->getPatternNo();
+            }
+            p = T.getNextValue(p);
+        }
+        return 0;
+    };
+
+    auto get_lls_patterns = [&positions](const ValueSet& T) {
+        ValueSet patterns;
+        int position_count = static_cast<int>(positions.size());
+        int p = T.getFirstValue();
+        while (p != -1) {
+            // Termination node should have the next position number
+            if (positions[p]->getType() == NodeType::kTrailCont && p + 1 < position_count &&
+                positions[p + 1]->getType() == NodeType::kTerm) {
+                patterns.addValue(static_cast<const TermNode*>(positions[p + 1])->getPatternNo());
+            }
+            p = T.getNextValue(p);
+        }
+        return patterns;
+    };
+
+    accept_.reserve(states.size());
+    lls_.reserve(states.size());
+    for (const auto& T : states) {
+        accept_.push_back(get_accept(T));
+        lls_.emplace_back(get_lls_patterns(T));
+    }
 
     std::cout << " - state count: " << Dtran_.size() << std::endl;
     std::cout << " - transition table size: " << Dtran_.size() * sizeof(*Dtran_.begin()) << " bytes" << std::endl;
@@ -135,7 +183,7 @@ void DfaBuilder::optimize() {
                 // Mark state
                 state_mark[cur_state] = true;
                 // Add adjucent states
-                for (unsigned symb = 0; symb < static_cast<int>(Dtran_[cur_state].size()); symb++) {
+                for (unsigned symb = 0; symb < kSymbCount; ++symb) {
                     int new_state = Dtran_[cur_state][symb];
                     if (new_state != -1) {
                         if (accept_[new_state] > 0) {
@@ -173,7 +221,7 @@ void DfaBuilder::optimize() {
     bool change = false;
     do {
         change = false;
-        for (unsigned symb = 0; symb < static_cast<unsigned>(Dtran_[0].size()); ++symb) {
+        for (unsigned symb = 0; symb < kSymbCount; ++symb) {
             std::vector<int> old_state_group = state_group;
             std::vector<std::map<int, int>> group_trans(group_count);
             for (unsigned state = 0; state < state_count; ++state) {
@@ -205,7 +253,7 @@ void DfaBuilder::optimize() {
         bool is_dead = true;
         if (state_used[state] && (state >= sc_count_) && (accept_[state] == 0)) {  // Is not start or accepting state
             // Check for 'dead' state
-            for (unsigned symb = 0; symb < static_cast<unsigned>(Dtran_[state].size()); ++symb) {
+            for (unsigned symb = 0; symb < kSymbCount; ++symb) {
                 int group = state_group[state];  // Current state group
                 int new_state = Dtran_[state][symb];
                 int new_group = -1;  // New state group
@@ -236,7 +284,7 @@ void DfaBuilder::optimize() {
     for (unsigned state = 0; state < state_count; ++state) {
         int new_state_idx = new_state_indices[state];
         if (new_state_idx != -1) {
-            for (unsigned symb = 0; symb < static_cast<unsigned>(Dtran_[state].size()); symb++) {
+            for (unsigned symb = 0; symb < kSymbCount; ++symb) {
                 int tran = Dtran_[state][symb];
                 if (tran != -1) { tran = new_state_indices[group_main_state[state_group[tran]]]; }
                 Dtran_[new_state_idx][symb] = tran;
@@ -264,19 +312,18 @@ void DfaBuilder::makeCompressedDtran(std::vector<int>& symb2meta, std::vector<in
     // Clear compressed Dtran
     unsigned state_count = static_cast<unsigned>(Dtran_.size());
     assert(state_count > 0);
-    unsigned symb_count = static_cast<unsigned>(Dtran_[0].size());
     // Build used symbols set
     ValueSet used_symbols;
     for (unsigned state = 0; state < state_count; ++state) {
-        for (unsigned symb = 0; symb < symb_count; ++symb) {
+        for (unsigned symb = 0; symb < kSymbCount; ++symb) {
             if (Dtran_[state][symb] != -1) { used_symbols.addValue(symb); }
         }
     }
     // Build symb2meta table
-    symb2meta.resize(symb_count);
+    symb2meta.resize(kSymbCount);
     std::vector<int> meta2symb;  // Inversed table
     unsigned used_symb_count = 0;
-    for (unsigned symb = 0; symb < symb_count; ++symb) {
+    for (unsigned symb = 0; symb < kSymbCount; ++symb) {
         if (used_symbols.contains(symb)) {
             symb2meta[symb] = used_symb_count;
             if (case_insensitive_ && std::islower(symb)) { symb2meta[std::toupper(symb)] = used_symb_count; }
@@ -400,56 +447,4 @@ void DfaBuilder::makeCompressedDtran(std::vector<int>& symb2meta, std::vector<in
               << (symb2meta.size() + def.size() + base.size() + next.size() + check.size()) * sizeof(int) << " bytes"
               << std::endl;
     std::cout << "Done." << std::endl;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// DfaBuilder private/protected methods
-
-bool DfaBuilder::addState(const ValueSet& U, unsigned& U_idx, bool find_equal) {
-    // Calculate eps-closure of the state
-    ValueSet closedU = U;
-    int p = U.getFirstValue();
-    while (p != -1) {
-        if (positions_[p]->getType() == NodeType::kTrailCont) { closedU |= positions_[p]->getFollowpos(); }
-        p = U.getNextValue(p);
-    }
-
-    if (find_equal) {
-        for (U_idx = 0; U_idx < static_cast<unsigned>(states_.size()); U_idx++) {
-            if (states_[U_idx] == closedU) { return false; }  // State found
-        }
-    } else {
-        U_idx = static_cast<unsigned>(states_.size());
-    }
-    states_.push_back(closedU);
-    Dtran_.push_back(std::vector<int>(256));
-    for (int i = 0; i < static_cast<int>(Dtran_[U_idx].size()); i++) { Dtran_[U_idx][i] = -1; }
-    return true;
-}
-
-int DfaBuilder::getAccept(const ValueSet& T) {
-    int p = T.getFirstValue();
-    while (p != -1) {
-        if (positions_[p]->getType() == NodeType::kTerm) {
-            return static_cast<const TermNode*>(positions_[p])->getPatternNo();
-        }
-        p = T.getNextValue(p);
-    }
-    return 0;
-}
-
-bool DfaBuilder::getLlsPatterns(const ValueSet& T, ValueSet& patterns) {
-    patterns.clear();
-    int position_count = static_cast<int>(positions_.size());
-    int p = T.getFirstValue();
-    while (p != -1) {
-        // Termination node should have the next position number
-        if (positions_[p]->getType() == NodeType::kTrailCont && p + 1 < position_count &&
-            positions_[p + 1]->getType() == NodeType::kTerm) {
-            patterns.addValue(static_cast<const TermNode*>(positions_[p + 1])->getPatternNo());
-        }
-        p = T.getNextValue(p);
-    }
-    if (!patterns.empty()) { return true; }
-    return false;
 }
