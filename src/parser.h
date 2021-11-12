@@ -31,23 +31,12 @@ InputIt from_utf8(InputIt in, InputIt in_end, uint32_t* pcode) {
 }
 }  // namespace detail
 
-enum {
-    tt_eof = 0,        // end of file
-    tt_symb = 256,     // single symbol
-    tt_sset,           // symbol set
-    tt_id,             // identifier
-    tt_string,         // string
-    tt_num,            // integer number
-    tt_nl,             // new line (end of regex)
-    tt_start,          // "%start" keyword
-    tt_option,         // "%option" keyword
-    tt_sep,            // separator "%%"
-    tt_sc_list_begin,  // begin start condition list
-    tt_unterminated_token,
-};
-
 namespace lex_detail {
 #include "lex_defs.h"
+}
+
+namespace parser_detail {
+#include "parser_defs.h"
 }
 
 class Node;

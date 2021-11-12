@@ -1,0 +1,55 @@
+%token eof
+%token nl
+%token symb
+%token sset
+%token id
+%token string
+%token num
+%token start
+%token option
+%token sep
+%token sc_list_begin
+%token unterm_token
+
+%action trail_cont
+%action or
+%action cat
+%action star
+%action plus
+%action question
+%action zero_num
+%action same_num
+%action mult_finite
+%action mult_infinite
+
+%nonassoc '/'
+%left '|'
+
+%%
+
+regex : expr [nl] ;
+
+expr : expr '/' expr {trail_cont}
+  | expr '|' expr {or}
+  | concat
+  ;
+
+concat : term
+  | concat term {cat}
+  ;
+
+term : '(' expr ')'
+  | term '*' {star}
+  | term '+' {plus}
+  | term '?' {question}
+  | term '{' [num] {same_num} '}' {mult_finite}
+  | term '{' {zero_num} ',' [num] '}' {mult_finite}
+  | term '{' [num] ',' '}' {mult_infinite}
+  | term '{' [num] ',' [num] '}' {mult_finite}
+  | [symb]
+  | [sset]
+  | [id]
+  | [string]
+  ;
+
+%%
