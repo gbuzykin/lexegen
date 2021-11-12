@@ -16,7 +16,7 @@ class DfaBuilder {
     static const unsigned kCountWeight = 1;
     static const unsigned kSegSizeWeight = 1;
 
-    void addPattern(std::unique_ptr<Node> syn_tree, const ValueSet& sc);
+    void addPattern(std::unique_ptr<Node> syn_tree, unsigned n_pat, const ValueSet& sc);
     bool isPatternWithTrailCont(unsigned n_pat) const;
     void build(unsigned sc_count,     // Start condition count
                bool case_insensitive  // Case insensitive DFA?

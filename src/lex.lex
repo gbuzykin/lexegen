@@ -1,50 +1,63 @@
 %start string
-%start reg_expr
+%start regex
+%start sset
+%start regex_br
 %start sc_list
 
 dig     [0-9]
-oct_dig [0-7]
-hex_dig [0-9a-fA-F]
+odig    [0-7]
+hdig    [0-9a-fA-F]
 letter  [a-zA-Z]
-int     (\+?|-?){dig}+
+num     {dig}+
 id      ({letter}|_)({letter}|{dig}|_)*
 ws      [ \t]+
 
 %%
 
-sc_list_begin   <sc_list> < / ({ws}?{id})+{ws}?>
-eof_expr        <reg_expr sc_list> "<<EOF>>"
-reg_expr_begin  <reg_expr sc_list> "" / [^ \t\n]
+sc_list_begin    <sc_list> < / ({ws}?{id})+{ws}?>
 
-string_end       <string>\"
-string_es_oct    <string>\\{oct_dig}{3}
-string_es_hex    <string>\\x{hex_dig}{2}
-string_es_a      <string>\\a
-string_es_b      <string>\\b
-string_es_f      <string>\\f
-string_es_r      <string>\\r
-string_es_n      <string>\\n
-string_es_t      <string>\\t
-string_es_v      <string>\\v
-string_es_bslash <string>\\\\
-string_es_dquot  <string>\\\"
-string_cont      <string>[^\\\n\"]*
-string_nl        <string>\n
-string_eof       <string><<EOF>>
+escape_oct    <string regex sset sc_list> \\{odig}{1,3}
+escape_hex    <string regex sset sc_list> \\x{hdig}{1,2}
+escape_a      <string regex sset sc_list> \\a
+escape_b      <string regex sset sc_list> \\b
+escape_f      <string regex sset sc_list> \\f
+escape_r      <string regex sset sc_list> \\r
+escape_n      <string regex sset sc_list> \\n
+escape_t      <string regex sset sc_list> \\t
+escape_v      <string regex sset sc_list> \\v
+escape_other  <string regex sset sc_list> \\.
 
-whitespace       {ws}
+string_seq    <string> [^\n\\"]+
+string_close  <string> \"
 
-start            <initial>"%start"
-option           <initial>"%option"
-sep              <initial>"%%"
+regex_sset_seq      <sset> [^\n\\\]\-]+
+regex_sset_range    <sset> -
+regex_sset_close    <sset> ]
 
-int              <initial>{int}
-id               <initial>{id}
+whitespace    {ws}
 
-string_begin     \"
-comment          #
-other_char       .
-nl               \n
-eof              <<EOF>>
+regex_sset       <regex sc_list> \[
+regex_sset_inv   <regex sc_list> \[^
+regex_dot        <regex sc_list> \.
+regex_eof_symb   <regex sc_list> "<<EOF>>"
+regex_id         <regex sc_list> \{{id}}
+regex_br         <regex sc_list> \{
+regex_nl         <regex sc_list regex_br> \n
+regex_br_close   <regex_br> }
+regex_symb       <regex sc_list> [^"|/*+?()]
+
+unterminated_token   <string sset> \n | <<EOF>>
+
+start    <initial> "%start"
+option   <initial> "%option"
+sep      <initial> "%%"
+id       <initial> {id}
+num      <initial regex_br> {num}
+comment  <initial> #
+
+string     \"
+other      .
+nl         \n
+eof        <<EOF>>
 
 %%

@@ -42,7 +42,6 @@ void outputLexDefs(std::ostream& outp) {
         "    char* unread_text = nullptr;",
         "    std::vector<char> text;",
         "    std::vector<int> state_stack;",
-        "    void (*get_more)(StateData& data) = nullptr;",
         "};",
     };
     // clang-format on
@@ -55,13 +54,12 @@ void outputLexEngine(std::ostream& outp, bool no_compress) {
     static constexpr std::string_view text0[] = {
         "int lex(StateData& data, int state) {",
         "    enum { kDeadFlag = 1, kTrailContFlag = 2, kFlagCount = 2 };",
-        "    data.pat_length = 0;",
-        "    data.state_stack.clear();",
+        "    if (data.state_stack.empty()) { data.pat_length = 0; }",
         "",
         "    // Fill buffers till transition is impossible",
         "    char symb = \'\\0\';",
         "    do {",
-        "        if (data.unread_text == data.text.data() + data.text.size()) { data.get_more(data); }",
+        "        if (data.unread_text == data.text.data() + data.text.size()) { return -1; }",
         "        symb = *data.unread_text;",
     };
     static constexpr std::string_view text1[] = {
@@ -96,12 +94,16 @@ void outputLexEngine(std::ostream& outp, bool no_compress) {
         "                do {",
         "                    state = data.state_stack.back();",
         "                    for (int i = lls_idx[state]; i < lls_idx[state + 1]; ++i) {",
-        "                        if (lls_list[i] == n_pat) { return n_pat; }",
+        "                        if (lls_list[i] == n_pat) {",
+        "                            data.state_stack.clear();",
+        "                            return n_pat;",
+        "                        }",
         "                    }",
         "                    *(--data.unread_text) = data.text[--data.pat_length];",
         "                    data.state_stack.pop_back();",
         "                } while (!data.state_stack.empty());",
         "            }",
+        "            data.state_stack.clear();",
         "            return n_pat;",
         "        }",
         "        *(--data.unread_text) = data.text[--data.pat_length];",
@@ -180,7 +182,7 @@ int main(int argc, char** argv) {
             return -1;
         }
 
-        Parser parser(ifile);
+        Parser parser(ifile, input_file_name);
         int ret = parser.parse();
         if (ret != 0) { return ret; }
 
@@ -188,8 +190,9 @@ int main(int argc, char** argv) {
         const auto& start_conditions = parser.getStartConditions();
 
         DfaBuilder dfa_builder;
+        unsigned n_pat = 0;
         for (size_t i = 0; i < patterns.size(); ++i) {
-            dfa_builder.addPattern(parser.extractPatternTree(i), patterns[i].sc);
+            dfa_builder.addPattern(parser.extractPatternTree(i), ++n_pat, patterns[i].sc);
         }
 
         // Build lexer

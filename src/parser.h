@@ -4,22 +4,46 @@
 
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
+namespace detail {
+template<typename InputIt>
+InputIt from_utf8(InputIt in, InputIt in_end, uint32_t* pcode) {
+    if (in >= in_end) { return in; }
+    uint32_t code = static_cast<uint8_t>(*in);
+    if ((code & 0xC0) == 0xC0) {
+        static const uint32_t mask_tbl[] = {0xFF, 0x1F, 0xF, 0x7};
+        static const uint32_t count_tbl[] = {1, 1, 1, 1, 2, 2, 3, 0};
+        uint32_t count = count_tbl[(code >> 3) & 7];  // continuation byte count
+        if (in_end - in <= count) { return in; }
+        code &= mask_tbl[count];
+        while (count > 0) {
+            code = (code << 6) | ((*++in) & 0x3F);
+            --count;
+        }
+    }
+    *pcode = code;
+    return ++in;
+}
+}  // namespace detail
+
 enum {
-    tt_symb = 256,
-    tt_sset,
-    tt_id,
-    tt_string,
-    tt_int,
-    tt_start,
-    tt_option,
-    tt_sep,
-    tt_sc_list_begin,
-    tt_eof_expr,
-    tt_reg_expr,
+    tt_eof = 0,        // end of file
+    tt_symb = 256,     // single symbol
+    tt_sset,           // symbol set
+    tt_id,             // identifier
+    tt_string,         // string
+    tt_num,            // integer number
+    tt_nl,             // new line (end of regex)
+    tt_start,          // "%start" keyword
+    tt_option,         // "%option" keyword
+    tt_sep,            // separator "%%"
+    tt_sc_list_begin,  // begin start condition list
+    tt_unterminated_token,
 };
 
 namespace lex_detail {
@@ -37,39 +61,51 @@ class Parser {
         std::unique_ptr<Node> syn_tree;
     };
 
-    explicit Parser(std::istream& input);
+    Parser(std::istream& input, std::string file_name);
     int parse();
     const std::vector<Pattern>& getPatterns() const { return patterns_; }
     const std::vector<std::string>& getStartConditions() const { return start_conditions_; }
     std::unique_ptr<Node> extractPatternTree(size_t n) { return std::move(patterns_[n].syn_tree); }
 
  private:
-    struct LexerData : public lex_detail::StateData {
-        explicit LexerData(std::istream& in_input) : input(in_input) {}
-        std::istream& input;
-    } lex_data_;
-
-    struct TokenValue {
-        int i = -1;
-        ValueSet sset;
-        std::string str;
+    struct TokenInfo {
+        unsigned n_col = 0;
+        std::variant<unsigned, ValueSet, std::string> val;
     };
 
-    struct RegexParserState {
-        int pos = 0;
-        bool mult_op = false;  // Parsing multiplication operator flag
+    struct ErrorLogger {
+        const Parser* parser;
+        std::stringstream ss;
+        explicit ErrorLogger(const Parser* in_parser) : parser(in_parser) {}
+        ErrorLogger(ErrorLogger&& el) noexcept : parser(el.parser) { el.parser = nullptr; }
+        ~ErrorLogger() {
+            if (parser) { parser->printError(ss.str()); }
+        }
+        ErrorLogger(const ErrorLogger&) = delete;
+        ErrorLogger& operator=(const ErrorLogger&) = delete;
+        ErrorLogger& operator=(ErrorLogger&&) = delete;
+        template<typename Ty>
+        ErrorLogger& operator<<(const Ty& v) {
+            ss << v;
+            return *this;
+        }
+        operator int() const { return -1; }
     };
 
-    int line_no_ = 0;
+    std::istream& input_;
+    std::string file_name_;
+    const char* current_line_ = nullptr;
+    unsigned n_line_ = 1, n_col_ = 1;
     std::vector<int> sc_stack_;
+    lex_detail::StateData lex_state_;
+    TokenInfo tkn_;
     std::unordered_map<std::string, std::string> options_;
     std::unordered_map<std::string, std::unique_ptr<Node>> definitions_;
     std::vector<std::string> start_conditions_;
     std::vector<Pattern> patterns_;
 
-    std::unique_ptr<Node> parseRegex(const std::string& reg_expr, RegexParserState& state);
+    std::pair<std::unique_ptr<Node>, int> parseRegex(int tt);
 
-    static bool isodigit(char ch) { return ch >= '0' && ch <= '7'; }
     static int dig(char ch) { return static_cast<int>(ch - '0'); }
     static int hdig(char ch) {
         if ((ch >= 'a') && (ch <= 'f')) { return static_cast<int>(ch - 'a') + 10; }
@@ -77,9 +113,8 @@ class Parser {
         return static_cast<int>(ch - '0');
     }
 
-    static void getMoreChars(lex_detail::StateData& data);
-    static int str2int(const char* str, size_t length);
-    static char readEscape(const std::string& reg_expr, RegexParserState& state);
-    static int lexRegex(const std::string& reg_expr, RegexParserState& state, TokenValue& val);
-    int lex(TokenValue& val);
+    int lex();
+    int logSyntaxError(int tt) const;
+    ErrorLogger logError() const { return ErrorLogger(this); }
+    void printError(const std::string& msg) const;
 };

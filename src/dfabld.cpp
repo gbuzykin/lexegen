@@ -8,8 +8,7 @@
 #include <map>
 #include <stdexcept>
 
-void DfaBuilder::addPattern(std::unique_ptr<Node> syn_tree, const ValueSet& sc) {
-    unsigned n_pat = 1 + static_cast<unsigned>(patterns_.size());
+void DfaBuilder::addPattern(std::unique_ptr<Node> syn_tree, unsigned n_pat, const ValueSet& sc) {
     if (n_pat > ValueSet::kMaxValue) { throw std::runtime_error("too many patterns"); }
     auto cat_node = std::make_unique<Node>(NodeType::kCat);
     cat_node->setRight(std::make_unique<TermNode>(n_pat));  // Add $end node
