@@ -1,14 +1,9 @@
 #include "dfabld.h"
-#include "lexer.h"
 #include "node.h"
-#include "reparser.h"
-#include "valset.h"
+#include "parser.h"
 
 #include <algorithm>
 #include <fstream>
-
-///////////////////////////////////////////////////////////////////////////////
-// Global functions
 
 template<typename Iter>
 void outputData(std::ostream& outp, Iter from, Iter to, size_t ntab = 0) {
@@ -129,47 +124,7 @@ void outputLexEngine(std::ostream& outp, bool no_compress) {
     for (const auto& l : text2) { outp << l << std::endl; }
 }
 
-int syntaxError(int line_no) {
-    std::cerr << std::endl << "****Error(" << line_no << "): syntax." << std::endl;
-    return -1;
-}
-
-int scAlreadyDefError(int line_no, const std::string& sc_id) {
-    std::cerr << std::endl
-              << "****Error(" << line_no << "): start condition '" << sc_id << "' is already defined." << std::endl;
-    return -1;
-}
-
-int regDefAlreadyDefError(int line_no, const std::string& reg_def_id) {
-    std::cerr << std::endl
-              << "****Error(" << line_no << "): regular definition '" << reg_def_id << "' is already defined."
-              << std::endl;
-    return -1;
-}
-
-int patIdAlreadyUsed(int line_no, const std::string& pattern_id) {
-    std::cerr << std::endl
-              << "****Error(" << line_no << "): pattern identifier '" << pattern_id << "' is already used."
-              << std::endl;
-    return -1;
-}
-
-int undefScIdError(int line_no, const std::string& sc_id) {
-    std::cerr << std::endl
-              << "****Error(" << line_no << "): undefined start condition identifier '" << sc_id << "'." << std::endl;
-    return -1;
-}
-
-int regExprError(int line_no, const std::string& reg_expr, std::string::size_type pos) {
-    std::cerr << std::endl << "****Error(" << line_no << "): regular expression:" << std::endl;
-    std::cerr << "    " << reg_expr.substr(0, pos) << "<=ERROR";
-    if (pos < reg_expr.size()) { std::cerr << "  " << reg_expr.substr(pos); }
-    std::cerr << "." << std::endl;
-    return -1;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Main function
+//---------------------------------------------------------------------------------------
 
 int main(int argc, char** argv) {
     try {
@@ -225,114 +180,18 @@ int main(int argc, char** argv) {
             return -1;
         }
 
-        std::map<std::string, std::unique_ptr<Node>> definitions;
-        int last_sc_no = 1;
-        std::map<std::string, int> sc_ids;
-        std::map<std::string, int> pattern_ids;
-        std::map<std::string, std::string> options;
-        sc_ids.emplace("initial", 0);  // Add initial start condition
+        Parser parser(ifile);
+        int ret = parser.parse();
+        if (ret != 0) { return ret; }
 
-        Lexer lexer(ifile);
-        int tt = 0;
-
-        // Load definitions
-        while (1) {
-            tt = lexer.lex();
-            if (tt == tt_start) {  // Start condition definition
-                tt = lexer.lex();
-                if (tt != tt_id) { return syntaxError(lexer.getLineNo()); }
-                std::string sc_id = lexer.getVal<std::string>();
-                auto result = sc_ids.emplace(sc_id, last_sc_no);
-                if (!result.second) { return scAlreadyDefError(lexer.getLineNo(), sc_id); }
-                last_sc_no++;
-            } else if (tt == tt_option) {  // Option
-                tt = lexer.lex();
-                if (tt != tt_id) { return syntaxError(lexer.getLineNo()); }
-                std::string opt_id = lexer.getVal<std::string>();
-                tt = lexer.lex();
-                if (tt != '=') { return syntaxError(lexer.getLineNo()); }
-                tt = lexer.lex();
-                if (tt != tt_string) { return syntaxError(lexer.getLineNo()); }
-                options.emplace(opt_id, lexer.getVal<std::string>());
-            } else if (tt == tt_id) {  // Regular definition
-                std::string reg_def_id = lexer.getVal<std::string>();
-                lexer.enterRegExprMode();
-
-                tt = lexer.lex();
-                if (tt != tt_reg_expr) { return syntaxError(lexer.getLineNo()); }
-                std::string reg_expr = lexer.getVal<std::string>();
-
-                REParser re_parser;
-                auto syn_tree = re_parser.parse(definitions, reg_expr);
-                if (!syn_tree) { return regExprError(lexer.getLineNo(), reg_expr, re_parser.getErrorPos()); }
-                auto result = definitions.emplace(reg_def_id, std::move(syn_tree));
-                if (!result.second) { return regDefAlreadyDefError(lexer.getLineNo(), reg_def_id); }
-                lexer.popMode();
-            } else if (tt == tt_sep) {
-                break;
-            } else {
-                return syntaxError(lexer.getLineNo());
-            }
-        }
+        const auto& patterns = parser.getPatterns();
+        const auto& start_conditions = parser.getStartConditions();
 
         DfaBuilder dfa_builder;
         dfa_builder.setCaseSensitive(!case_insensitive);
-        dfa_builder.setScCount(last_sc_no);
-        // Load patterns
-        while (1) {
-            tt = lexer.lex();
-            if (tt == tt_id) {
-                // Get pattern identifier
-                std::string pattern_id = lexer.getVal<std::string>();
-                auto result = pattern_ids.emplace(pattern_id, 1 + dfa_builder.getPatternCount());
-                if (!result.second) { return patIdAlreadyUsed(lexer.getLineNo(), pattern_id); }
-
-                // Load pattern
-                ValueSet sc;
-                lexer.enterScListMode();
-                tt = lexer.lex();
-                if (tt == tt_sc_list_begin) {
-                    lexer.popMode();
-                    // Parse start conditions
-                    while (1) {
-                        tt = lexer.lex();
-                        if (tt == tt_id) {
-                            std::string sc_id = lexer.getVal<std::string>();
-                            // Find start condition
-                            auto sc_it = sc_ids.find(sc_id);
-                            if (sc_it == sc_ids.end()) { return undefScIdError(lexer.getLineNo(), sc_id); }
-                            // Add start condition
-                            sc.addValue(sc_it->second);
-                        } else if (tt == '>') {
-                            break;
-                        } else {
-                            return syntaxError(lexer.getLineNo());
-                        }
-                    }
-                    lexer.enterRegExprMode();
-                    tt = lexer.lex();
-                } else {
-                    sc.addValues(0, last_sc_no - 1);
-                }
-
-                std::unique_ptr<Node> syn_tree;
-                if (tt == tt_reg_expr) {
-                    std::string pattern = lexer.getVal<std::string>();
-                    REParser re_parser;
-                    syn_tree = re_parser.parse(definitions, pattern);
-                    if (!syn_tree) { return regExprError(lexer.getLineNo(), pattern, re_parser.getErrorPos()); }
-                } else if (tt == tt_eof_expr) {
-                    syn_tree = std::make_unique<SymbNode>(0);  // Add <<EOF>> pattern
-                } else {
-                    return syntaxError(lexer.getLineNo());
-                }
-                dfa_builder.addPattern(std::move(syn_tree), sc);
-                lexer.popMode();
-            } else if ((tt == 0) || (tt == tt_sep)) {
-                break;
-            } else {
-                return syntaxError(lexer.getLineNo());
-            }
+        dfa_builder.setScCount(static_cast<int>(start_conditions.size()));
+        for (size_t i = 0; i < patterns.size(); ++i) {
+            dfa_builder.addPattern(parser.extractPatternTree(i), patterns[i].sc);
         }
 
         // Build lexer
@@ -352,14 +211,13 @@ int main(int argc, char** argv) {
             ofile << "// Lexegen autogenerated definition file - do not edit!" << std::endl;
             ofile << std::endl << "enum {" << std::endl;
             ofile << "    predef_pat_default = 0," << std::endl;
-            for (const auto& pat : pattern_ids) {
-                ofile << "    pat_" << pat.first << " = " << pat.second << "," << std::endl;
-            }
+            for (size_t i = 0; i < patterns.size(); ++i) { ofile << "    pat_" << patterns[i].id << "," << std::endl; }
             ofile << "};" << std::endl;
-            if (!sc_ids.empty()) {
+            if (!start_conditions.empty()) {
                 ofile << std::endl << "enum {" << std::endl;
-                for (const auto& sc : sc_ids) {
-                    ofile << "    sc_" << sc.first << " = " << sc.second << "," << std::endl;
+                ofile << "    sc_" << start_conditions[0] << " = 0," << std::endl;
+                for (size_t i = 1; i < start_conditions.size(); ++i) {
+                    ofile << "    sc_" << start_conditions[i] << "," << std::endl;
                 }
                 ofile << "};" << std::endl;
             }

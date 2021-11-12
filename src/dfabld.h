@@ -13,8 +13,6 @@ class DfaBuilder {
  public:
     bool getCaseSensitive() const { return case_sensitive_; };
     void setCaseSensitive(bool flag) { case_sensitive_ = flag; };
-    int getPatternCount() const { return (int)patterns_.size(); };
-    int getScCount() const { return sc_count_; };
     void setScCount(int count) { sc_count_ = count; };
     void addPattern(std::unique_ptr<Node> syn_tree, const ValueSet& sc);
     bool isPatternWithTrailCont(unsigned n_pat) const;
