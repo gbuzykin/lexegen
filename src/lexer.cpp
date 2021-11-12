@@ -61,10 +61,10 @@ int Lexer::lex() {
             case lex_detail::pat_reg_expr_begin: {
                 std::string reg_expr;
                 do {
-                    if (lex_data_.unread_pos == static_cast<unsigned>(lex_data_.text.size())) {
+                    if (lex_data_.unread_text == lex_data_.text.data() + lex_data_.text.size()) {
                         getMoreChars(lex_data_);
                     }
-                    reg_expr.push_back(lex_data_.text[lex_data_.unread_pos++]);
+                    reg_expr.push_back(*lex_data_.unread_text++);
                 } while (reg_expr.back() != '\0' && reg_expr.back() != '\n');
                 val_ = std::move(reg_expr);
                 ++line_no_;
@@ -74,10 +74,10 @@ int Lexer::lex() {
             case lex_detail::pat_comment: {
                 char symb = '\0';
                 do {
-                    if (lex_data_.unread_pos == static_cast<unsigned>(lex_data_.text.size())) {
+                    if (lex_data_.unread_text == lex_data_.text.data() + lex_data_.text.size()) {
                         getMoreChars(lex_data_);
                     }
-                    symb = lex_data_.text[lex_data_.unread_pos++];  // Eat up comment
+                    symb = *lex_data_.unread_text++;  // Eat up comment
                 } while (symb != '\0' && symb != '\n');
                 ++line_no_;
             } break;
@@ -95,14 +95,14 @@ void Lexer::enterRegExprMode() { sc_stack_.push_back(lex_detail::sc_reg_expr); }
 void Lexer::enterScListMode() { sc_stack_.push_back(lex_detail::sc_sc_list); }
 
 /*static*/ void Lexer::getMoreChars(lex_detail::StateData& data) {
-    const unsigned kChunkSize = 32;
-    data.unread_pos = data.pat_length;
-    data.text.resize(data.unread_pos + kChunkSize);
-    static_cast<LexData&>(data).input.read(data.text.data() + data.unread_pos, kChunkSize);
+    const size_t kChunkSize = 32;
+    data.text.resize(data.pat_length + kChunkSize);
+    data.unread_text = data.text.data() + data.pat_length;
+    static_cast<LexData&>(data).input.read(data.unread_text, kChunkSize);
     size_t count = static_cast<LexData&>(data).input.gcount();
     if (count < kChunkSize) {
-        data.text.resize(data.unread_pos + count);
-        data.text.push_back('\0');  // EOF
+        data.text.resize(data.pat_length + count + 1);
+        data.text.back() = '\0';  // EOF
     }
 }
 

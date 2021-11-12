@@ -24,36 +24,54 @@ class SmartDefs : public std::map<std::string, Node*> {
 ///////////////////////////////////////////////////////////////////////////////
 // Global functions
 
-void outputArray(std::ostream& outp, const std::string& array_name, const std::vector<int>& data) {
-    if (data.size() > 0) {
-        outp << std::endl << "static int " << array_name << "[" << data.size() << "] = {";
-        for (std::vector<int>::size_type i = 0; i < data.size(); i++) {
-            if ((i & 15) == 0) { outp << std::endl << "  "; }
-            outp << data[i];
-            if (i != (data.size() - 1)) { outp << ", "; }
+template<typename Iter>
+void outputData(std::ostream& outp, Iter from, Iter to, size_t ntab = 0) {
+    if (from == to) { return; }
+    const unsigned length_limit = 120;
+    std::string tab(ntab, ' '), line = tab + std::to_string(*from);
+    while (++from != to) {
+        auto sval = std::to_string(*from);
+        if (line.length() + sval.length() + 3 > length_limit) {
+            outp << line << "," << std::endl;
+            line = tab + sval;
+        } else {
+            line += ", " + sval;
         }
-        outp << std::endl << "};" << std::endl;
+    }
+    outp << line << std::endl;
+}
+
+template<typename Iter>
+void outputArray(std::ostream& outp, const std::string& array_name, Iter from, Iter to) {
+    outp << std::endl << "static int " << array_name;
+    if (from == to) {
+        outp << "[1] = { 0 };" << std::endl;
     } else {
-        outp << std::endl << "static int " << array_name << "[1] = { -1 };" << std::endl;
+        outp << "[" << std::distance(from, to) << "] = {" << std::endl;
+        outputData(outp, from, to, 4);
+        outp << "};" << std::endl;
     }
 }
 
 void outputLexDefs(std::ostream& outp) {
-    static const char* text[] = {
+    // clang-format off
+    static constexpr std::string_view text[] = {
         "struct StateData {",
-        "    unsigned pat_length = 0;",
-        "    unsigned unread_pos = 0;",
+        "    size_t pat_length = 0;",
+        "    char* unread_text = nullptr;",
         "    std::vector<char> text;",
         "    std::vector<int> state_stack;",
         "    void (*get_more)(StateData& data) = nullptr;",
         "};",
     };
+    // clang-format on
     outp << std::endl;
-    for (const char* l : text) { outp << l << std::endl; }
+    for (const auto& l : text) { outp << l << std::endl; }
 }
 
-void outputLexEngine(std::ostream& outp) {
-    static const char* text[] = {
+void outputLexEngine(std::ostream& outp, bool no_compress) {
+    // clang-format off
+    static constexpr std::string_view text0[] = {
         "int lex(StateData& data, int state) {",
         "    data.pat_length = 0;",
         "    data.state_stack.clear();",
@@ -61,8 +79,10 @@ void outputLexEngine(std::ostream& outp) {
         "    // Fill buffers till transition is impossible",
         "    char symb = \'\\0\';",
         "    do {",
-        "        if (data.unread_pos == static_cast<unsigned>(data.text.size())) { data.get_more(data); }",
-        "        symb = data.text[data.unread_pos];",
+        "        if (data.unread_text == data.text.data() + data.text.size()) { data.get_more(data); }",
+        "        symb = *data.unread_text;",
+    };
+    static constexpr std::string_view text1[] = {
         "        int meta = symb2meta[static_cast<unsigned char>(symb)];",
         "        if (meta < 0) { break; }",
         "        do {",
@@ -73,43 +93,52 @@ void outputLexEngine(std::ostream& outp) {
         "            }",
         "            state = def[state];",
         "        } while (state >= 0);",
+    };
+    static constexpr std::string_view text1_no_compress[] = {
+        "        state = Dtran[state][static_cast<unsigned char>(symb)];",
+    };
+    static constexpr std::string_view text2[] = {
         "        if (state < 0) { break; }",
         "        data.text[data.pat_length++] = symb;",
-        "        ++data.unread_pos;",
+        "        ++data.unread_text;",
         "        data.state_stack.push_back(state);",
         "    } while (symb != 0);",
         "",
         "    // Unroll downto last accepting state",
         "    while (!data.state_stack.empty()) {",
-        "        state = data.state_stack.back();",
-        "        for (int i = accept_idx[state]; i < accept_idx[state + 1]; ++i) {",
-        "            int act = accept_list[i];",
-        "            if (!(act & 0xC000)) {",
-        "                return act & 0x3FFF;",
-        "            } else if (act & 0x8000) {",
-        "                act ^= 0xC000;",
+        "        int pat = accept[data.state_stack.back()];",
+        "        if (pat >= 0) {",
+        "            if (pat & 0x8000) {",
+        "                pat ^= 0x8000;",
         "                do {",
         "                    state = data.state_stack.back();",
-        "                    for (i = accept_idx[state]; i < accept_idx[state + 1]; ++i) {",
-        "                        if (accept_list[i] == act) { return act & 0x3FFF; }",
+        "                    for (int i = lls_idx[state]; i < lls_idx[state + 1]; ++i) {",
+        "                        if (lls_list[i] == pat) { return pat; }",
         "                    }",
-        "                    data.text[--data.unread_pos] = data.text[--data.pat_length];",
+        "                    *(--data.unread_text) = data.text[--data.pat_length];",
         "                    data.state_stack.pop_back();",
         "                } while (!data.state_stack.empty());",
-        "                return act & 0x3FFF;",
         "            }",
+        "            return pat;",
         "        }",
-        "        data.text[--data.unread_pos] = data.text[--data.pat_length];",
+        "        *(--data.unread_text) = data.text[--data.pat_length];",
         "        data.state_stack.pop_back();",
         "    }",
         "",
         "    // Default pattern",
-        "    data.text[data.pat_length++] = data.text[data.unread_pos++];",
+        "    data.text[data.pat_length++] = *data.unread_text++;",
         "    return -1;",
         "}",
     };
+    // clang-format on
     outp << std::endl;
-    for (const char* l : text) { outp << l << std::endl; }
+    for (const auto& l : text0) { outp << l << std::endl; }
+    if (no_compress) {
+        for (const auto& l : text1_no_compress) { outp << l << std::endl; }
+    } else {
+        for (const auto& l : text1) { outp << l << std::endl; }
+    }
+    for (const auto& l : text2) { outp << l << std::endl; }
 }
 
 int syntaxError(int line_no) {
@@ -157,6 +186,8 @@ int regExprError(int line_no, const std::string& reg_expr, std::string::size_typ
 int main(int argc, char** argv) {
     try {
         bool case_insensitive = false;
+        bool no_compress = false;
+        int optimization_level = 1;
         std::string input_file_name;
         std::string analyzer_file_name("lex_analyzer.inl");
         std::string defs_file_name("lex_defs.h");
@@ -168,8 +199,30 @@ int main(int argc, char** argv) {
                 if (++i < argc) { defs_file_name = argv[i]; }
             } else if (arg == "--no-case") {
                 case_insensitive = true;
-            } else {
+            } else if (arg == "--no-compress") {
+                no_compress = true;
+            } else if (arg == "-O0") {
+                optimization_level = 0;
+            } else if (arg == "--help") {
+                // clang-format off
+                static const char* text[] = {
+                    "Usage: lexegen [options] file",
+                    "Options:",
+                    "    -o <file>           Place the output analyzer into <file>.",
+                    "    -h <file>           Place the output definitions into <file>.",
+                    "    --no-case           Build case insensitive analyzer.",
+                    "    --no-compress       Do not compress analyzer table.",
+                    "    -O0                 Do not optimize analyzer.",
+                    "    --help              Display this information.",
+                };
+                // clang-format on
+                for (const char* l : text) { std::cout << l << std::endl; }
+                return 0;
+            } else if (arg[0] != '-') {
                 input_file_name = argv[i];
+            } else {
+                std::cerr << "lexegen: unknown flag `" << arg << "`." << std::endl;
+                return -1;
             }
         }
 
@@ -301,19 +354,16 @@ int main(int argc, char** argv) {
         std::vector<ValueSet> lls;
         std::cout << "Building lexer..." << std::endl;
         dfa_builder.build(Dtran, accept, lls);
-        std::cout << "Optimizing states..." << std::endl;
-        dfa_builder.optimize(Dtran, accept, lls);
+        if (optimization_level > 0) {
+            std::cout << "Optimizing states..." << std::endl;
+            dfa_builder.optimize(Dtran, accept, lls);
+        }
 
-        std::cout << "Compressing tables..." << std::endl;
-        std::vector<int> symb2meta, def, base, next, check;
-        dfa_builder.compressDtran(Dtran, symb2meta, def, base, next, check);
-
-        std::cout << "Success. States count = " << base.size() << "." << std::endl;
+        std::cout << "Success. States count = " << Dtran.size() << "." << std::endl;
 
         if (std::ofstream ofile(defs_file_name); ofile) {
             ofile << "// Lexegen autogenerated definition file - do not edit!" << std::endl;
             if (!pattern_ids.empty()) {
-                // Output pattern identifiers
                 ofile << std::endl << "enum {" << std::endl;
                 for (const auto& pat : pattern_ids) {
                     ofile << "    pat_" << pat.first << " = " << pat.second << "," << std::endl;
@@ -321,7 +371,6 @@ int main(int argc, char** argv) {
                 ofile << "};" << std::endl;
             }
             if (!sc_ids.empty()) {
-                // Output start condition identifiers
                 ofile << std::endl << "enum {" << std::endl;
                 for (const auto& sc : sc_ids) {
                     ofile << "    sc_" << sc.first << " = " << sc.second << "," << std::endl;
@@ -333,32 +382,48 @@ int main(int argc, char** argv) {
             std::cerr << "lexegen: cannot open output file `" << defs_file_name << "`." << std::endl;
         }
 
-        // Output arrays
         if (std::ofstream ofile(analyzer_file_name); ofile) {
             ofile << "// Lexegen autogenerated analyzer file - do not edit!" << std::endl;
-            outputArray(ofile, "symb2meta", symb2meta);
-            outputArray(ofile, "def", def);
-            outputArray(ofile, "base", base);
-            outputArray(ofile, "next", next);
-            outputArray(ofile, "check", check);
-
-            std::vector<int> accept_list, accept_idx;
-            accept_idx.push_back((int)accept_list.size());
-            for (size_t i = 0; i < accept.size(); ++i) {
-                if (accept[i] != -1) { accept_list.push_back(accept[i]); }
-                int val = lls[i].getFirstValue();
-                while (val != -1) {
-                    accept_list.push_back(kMaskLLS | val);
-                    val = lls[i].getNextValue(val);
+            if (no_compress) {
+                if (!Dtran.empty()) {
+                    ofile << std::endl
+                          << "static int Dtran[" << Dtran.size() << "][" << Dtran[0].size() << "] = {" << std::endl;
+                    for (size_t j = 0; j < Dtran.size(); ++j) {
+                        ofile << (j == 0 ? "    {" : ", {") << std::endl;
+                        outputData(ofile, Dtran[j].begin(), Dtran[j].end(), 8);
+                        ofile << "    }";
+                    }
+                    ofile << std::endl << "};" << std::endl;
                 }
-                accept_idx.push_back((int)accept_list.size());
+            } else {
+                std::cout << "Compressing tables..." << std::endl;
+                std::vector<int> symb2meta, def, base, next, check;
+                dfa_builder.compressDtran(Dtran, symb2meta, def, base, next, check);
+                outputArray(ofile, "symb2meta", symb2meta.begin(), symb2meta.end());
+                outputArray(ofile, "def", def.begin(), def.end());
+                outputArray(ofile, "base", base.begin(), base.end());
+                outputArray(ofile, "next", next.begin(), next.end());
+                outputArray(ofile, "check", check.begin(), check.end());
             }
-            outputArray(ofile, "accept_list", accept_list);
-            outputArray(ofile, "accept_idx", accept_idx);
-            outputLexEngine(ofile);
+
+            std::vector<int> lls_idx, lls_list;
+            lls_idx.push_back(0);
+            for (size_t i = 0; i < lls.size(); ++i) {
+                int pat_no = lls[i].getFirstValue();
+                while (pat_no != -1) {
+                    lls_list.push_back(pat_no);
+                    pat_no = lls[i].getNextValue(pat_no);
+                }
+                lls_idx.push_back(static_cast<int>(lls_list.size()));
+            }
+            outputArray(ofile, "accept", accept.begin(), accept.end());
+            outputArray(ofile, "lls_idx", lls_idx.begin(), lls_idx.end());
+            outputArray(ofile, "lls_list", lls_list.begin(), lls_list.end());
+            outputLexEngine(ofile, no_compress);
         } else {
             std::cerr << "lexegen: cannot open output file `" << analyzer_file_name << "`." << std::endl;
         }
+
         return 0;
     } catch (const std::exception& e) { std::cerr << "lexegen: exception catched: " << e.what() << "." << std::endl; }
     return -1;

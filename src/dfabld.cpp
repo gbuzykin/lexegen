@@ -21,7 +21,7 @@ void DfaBuilder::addPattern(Node* syn_tree, const ValueSet& sc) {
     if (syn_tree->getType() == kTrailCont) {
         // Pattern with trailing context
         static_cast<TrailContNode*>(syn_tree)->setPatternNo(pattern_count);
-        cat_node->setRight(new TermNode(kMaskTrailing | pattern_count));  // Add $end node
+        cat_node->setRight(new TermNode(kTrailContBit | pattern_count));  // Add $end node
     } else {
         cat_node->setRight(new TermNode(pattern_count));  // Add $end node
     }
@@ -151,7 +151,7 @@ void DfaBuilder::optimize(std::vector<std::vector<int>>& Dtran, std::vector<int>
         } else if (state < sc_count_) {
             group_no = state;
         } else if (accept[state] != -1) {
-            group_no = sc_count_ + (accept[state] & kMaskPattern);
+            group_no = sc_count_ + (accept[state] & ~kTrailContBit);
         }
         if (group_main_state[group_no] == -1) {
             group_main_state[group_no] = state;
@@ -542,7 +542,7 @@ bool DfaBuilder::isLastLexemeState(const ValueSet& T, ValueSet& patterns) {
         const auto* pos_node = positions_[p];
         assert(pos_node);
         if (pos_node->getType() == kTrailCont) {
-            patterns.addValue(static_cast<const TrailContNode*>(pos_node)->getPatternNo() & kMaskPattern);
+            patterns.addValue(static_cast<const TrailContNode*>(pos_node)->getPatternNo() & ~kTrailContBit);
         }
         p = T.getNextValue(p);
     }

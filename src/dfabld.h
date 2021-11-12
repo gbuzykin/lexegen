@@ -4,10 +4,6 @@
 
 #include <vector>
 
-const int kMaskTrailing = 0x8000;  // Pattern with trailling context mask
-const int kMaskLLS = 0x4000;       // Last lexeme state mask
-const int kMaskPattern = 0x3FFF;   // Pattern mask
-
 class Node;
 
 // DFA builder class
@@ -26,6 +22,7 @@ class DfaBuilder {
                        std::vector<int>& base, std::vector<int>& next, std::vector<int>& check);
 
  protected:
+    static const int kTrailContBit = 0x8000;  // Pattern with trailling context
     static const int kCountWeight = 1;
     static const int kSegSizeWeight = 1;
 

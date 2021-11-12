@@ -40,8 +40,8 @@ enum {
 };
 
 struct StateData {
-    unsigned pat_length = 0;
-    unsigned unread_pos = 0;
+    size_t pat_length = 0;
+    char* unread_text = nullptr;
     std::vector<char> text;
     std::vector<int> state_stack;
     void (*get_more)(StateData& data) = nullptr;
