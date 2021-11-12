@@ -3,6 +3,7 @@
 #include "valset.h"
 
 #include <map>
+#include <memory>
 #include <string>
 
 // Token types
@@ -18,7 +19,8 @@ class Node;
 class REParser {
  public:
     std::string::size_type getErrorPos() const { return pos_; };
-    Node* parse(const std::map<std::string, Node*>& definitions, const std::string& reg_expr);
+    std::unique_ptr<Node> parse(const std::map<std::string, std::unique_ptr<Node>>& definitions,
+                                const std::string& reg_expr);
 
  protected:
     std::string::size_type pos_ = 0;  // Current regular expression position

@@ -7,7 +7,8 @@
 ///////////////////////////////////////////////////////////////////////////////
 // REParser public methods
 
-Node* REParser::parse(const std::map<std::string, Node*>& definitions, const std::string& reg_expr) {
+std::unique_ptr<Node> REParser::parse(const std::map<std::string, std::unique_ptr<Node>>& definitions,
+                                      const std::string& reg_expr) {
     // Parser tables:
     static int token_count = 16;
     static int nonterm_count = 9;
@@ -38,7 +39,7 @@ Node* REParser::parse(const std::map<std::string, Node*>& definitions, const std
 
     // LL(1) stack initialization
     std::vector<int> ll1_stack;
-    std::vector<Node*> node_stack;
+    std::vector<std::unique_ptr<Node>> node_stack;
     ll1_stack.push_back(0);
 
     // Parse regular expression
@@ -51,25 +52,25 @@ Node* REParser::parse(const std::map<std::string, Node*>& definitions, const std
         if ((cur_symb & 0x3000) == 0) {                // Token
             if (cur_symb != last_token) { return 0; }  // Syntax error
             if (cur_symb == ttSymb) {                  // Create 'symbol' subtree
-                node_stack.push_back(new SymbNode(symb_));
+                node_stack.emplace_back(std::make_unique<SymbNode>(symb_));
             } else if (cur_symb == ttSSet) {  // Create 'symbol set' subtree
-                node_stack.push_back(new SymbSetNode(sset_));
+                node_stack.emplace_back(std::make_unique<SymbSetNode>(sset_));
             } else if (cur_symb == ttID) {  // Insert subtree
                 auto pat_it = definitions.find(id_);
                 if (pat_it == definitions.end()) { return 0; }  // Syntax error
-                node_stack.push_back(pat_it->second->cloneTree());
+                node_stack.emplace_back(pat_it->second->cloneTree());
             } else if (cur_symb == ttStr) {  // Create 'string' subtree
                 if (!str_.empty()) {
-                    Node* str_node = new SymbNode(static_cast<unsigned char>(str_[0]));
+                    std::unique_ptr<Node> str_node = std::make_unique<SymbNode>(static_cast<unsigned char>(str_[0]));
                     for (std::string::size_type i = 1; i < str_.size(); i++) {
-                        auto* cat_node = new Node(kCat);
-                        cat_node->setLeft(str_node);
-                        cat_node->setRight(new SymbNode(static_cast<unsigned char>(str_[i])));
-                        str_node = cat_node;
+                        auto cat_node = std::make_unique<Node>(NodeType::kCat);
+                        cat_node->setLeft(std::move(str_node));
+                        cat_node->setRight(std::make_unique<SymbNode>(static_cast<unsigned char>(str_[i])));
+                        str_node = std::move(cat_node);
                     }
-                    node_stack.push_back(str_node);
+                    node_stack.emplace_back(std::move(str_node));
                 } else {
-                    node_stack.push_back(new EmptySymbNode());
+                    node_stack.emplace_back(std::make_unique<EmptySymbNode>());
                 }
             } else if (cur_symb == ttNum) {  // Save number
                 if (num1 == -1) {
@@ -94,40 +95,41 @@ Node* REParser::parse(const std::map<std::string, Node*>& definitions, const std
         } else if ((cur_symb & 0x3000) == 0x2000) {  // Action
             switch (cur_symb & 0xFFF) {
                 case 0: {  // Trailing context
-                    auto* trail_cont_node = new TrailContNode(-1);
-                    trail_cont_node->setRight(node_stack.back());
+                    auto trail_cont_node = std::make_unique<TrailContNode>(-1);
+                    trail_cont_node->setRight(std::move(node_stack.back()));
                     node_stack.pop_back();
-                    trail_cont_node->setLeft(node_stack.back());
-                    node_stack.back() = trail_cont_node;
+                    trail_cont_node->setLeft(std::move(node_stack.back()));
+                    node_stack.back() = std::move(trail_cont_node);
                 } break;
                 case 1: {  // Or
-                    auto* or_node = new Node(kOr);
-                    or_node->setRight(node_stack.back());
+                    auto or_node = std::make_unique<Node>(NodeType::kOr);
+                    or_node->setRight(std::move(node_stack.back()));
                     node_stack.pop_back();
-                    or_node->setLeft(node_stack.back());
-                    node_stack.back() = or_node;
+                    or_node->setLeft(std::move(node_stack.back()));
+                    node_stack.back() = std::move(or_node);
                 } break;
                 case 2: {  // Cat
-                    auto* cat_node = new Node(kCat);
-                    cat_node->setRight(node_stack.back());
+                    auto cat_node = std::make_unique<Node>(NodeType::kCat);
+                    cat_node->setRight(std::move(node_stack.back()));
                     node_stack.pop_back();
-                    cat_node->setLeft(node_stack.back());
-                    node_stack.back() = cat_node;
+                    cat_node->setLeft(std::move(node_stack.back()));
+                    node_stack.back() = std::move(cat_node);
                 } break;
                 case 3: {  // Star
-                    auto* star_node = new Node(kStar);
-                    star_node->setLeft(node_stack.back());
-                    node_stack.back() = star_node;
+                    auto star_node = std::make_unique<Node>(NodeType::kStar);
+                    star_node->setLeft(std::move(node_stack.back()));
+                    assert(star_node->getLeft());
+                    node_stack.back() = std::move(star_node);
                 } break;
                 case 4: {  // Plus
-                    auto* plus_node = new Node(kPlus);
-                    plus_node->setLeft(node_stack.back());
-                    node_stack.back() = plus_node;
+                    auto plus_node = std::make_unique<Node>(NodeType::kPlus);
+                    plus_node->setLeft(std::move(node_stack.back()));
+                    node_stack.back() = std::move(plus_node);
                 } break;
                 case 5: {  // Question
-                    auto* question_node = new Node(kQuestion);
-                    question_node->setLeft(node_stack.back());
-                    node_stack.back() = question_node;
+                    auto question_node = std::make_unique<Node>(NodeType::kQuestion);
+                    question_node->setLeft(std::move(node_stack.back()));
+                    node_stack.back() = std::move(question_node);
                 } break;
                 case 6: {  // Reset multiplication parameters
                     num1 = -1;
@@ -138,47 +140,47 @@ Node* REParser::parse(const std::map<std::string, Node*>& definitions, const std
                 } break;
                 case 8: {  // Multiplicate node
                     assert(num1 >= 0);
-                    auto* child = node_stack.back();
+                    const auto* child = node_stack.back().get();
                     // Fixed part
-                    Node* left_subtree = nullptr;
+                    std::unique_ptr<Node> left_subtree;
                     if (num1 > 0) {
-                        left_subtree = child;
-                        for (int i = 1; i < num1; i++) {
-                            auto* cat_node = new Node(kCat);
-                            cat_node->setLeft(left_subtree);
-                            cat_node->setRight(child->cloneTree());
-                            left_subtree = cat_node;
+                        left_subtree = std::move(node_stack.back());
+                        for (int i = 1; i < num1; ++i) {
+                            auto cat_node = std::make_unique<Node>(NodeType::kCat);
+                            cat_node->setLeft(std::move(left_subtree));
+                            cat_node->setRight(child->clone());
+                            left_subtree = std::move(cat_node);
                         }
                     }
                     // Optional part
-                    Node* right_subtree = nullptr;
+                    std::unique_ptr<Node> right_subtree;
                     if (num2 == -1) {  // Infinite multiplication
-                        right_subtree = new Node(kStar);
-                        right_subtree->setLeft(num1 == 0 ? child : child->cloneTree());
+                        right_subtree = std::make_unique<Node>(NodeType::kStar);
+                        right_subtree->setLeft(num1 > 0 ? child->clone() : std::move(node_stack.back()));
+                        assert(right_subtree->getLeft());
                     } else if (num2 > num1) {  // Finite multiplication
-                        right_subtree = new Node(kQuestion);
-                        right_subtree->setLeft(num1 == 0 ? child : child->cloneTree());
+                        right_subtree = std::make_unique<Node>(NodeType::kQuestion);
+                        right_subtree->setLeft(num1 > 0 ? child->clone() : std::move(node_stack.back()));
                         for (int i = num1 + 1; i < num2; i++) {
-                            auto* cat_node = new Node(kCat);
-                            cat_node->setLeft(right_subtree);
-                            cat_node->setRight(new Node(kQuestion));
-                            cat_node->getRight()->setLeft(child->cloneTree());
-                            right_subtree = cat_node;
+                            auto cat_node = std::make_unique<Node>(NodeType::kCat);
+                            cat_node->setLeft(std::move(right_subtree));
+                            cat_node->setRight(std::make_unique<Node>(NodeType::kQuestion));
+                            cat_node->getRight()->setLeft(child->clone());
+                            right_subtree = std::move(cat_node);
                         }
                     }
                     // Concatenate fixed and optional parts
                     if (left_subtree && right_subtree) {
-                        auto* cat_node = new Node(kCat);
-                        cat_node->setLeft(left_subtree);
-                        cat_node->setRight(right_subtree);
-                        node_stack.back() = cat_node;
+                        auto cat_node = std::make_unique<Node>(NodeType::kCat);
+                        cat_node->setLeft(std::move(left_subtree));
+                        cat_node->setRight(std::move(right_subtree));
+                        node_stack.back() = std::move(cat_node);
                     } else if (left_subtree) {
-                        node_stack.back() = left_subtree;
+                        node_stack.back() = std::move(left_subtree);
                     } else if (right_subtree) {
-                        node_stack.back() = right_subtree;
+                        node_stack.back() = std::move(right_subtree);
                     } else {
-                        node_stack.back() = new EmptySymbNode();
-                        child->deleteTree();
+                        node_stack.back() = std::make_unique<EmptySymbNode>();
                     }
                 } break;
             }
@@ -190,7 +192,7 @@ Node* REParser::parse(const std::map<std::string, Node*>& definitions, const std
     } while (cur_symb != 0);  // End of expression
     if (last_token != 0) { return 0; }
     assert(node_stack.size() == 1);
-    return node_stack.back();
+    return std::move(node_stack.back());
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -7,21 +7,6 @@
 #include <fstream>
 
 ///////////////////////////////////////////////////////////////////////////////
-// SmartDefs construction/destruction
-
-class SmartDefs : public std::map<std::string, Node*> {
- public:
-    SmartDefs() : map<std::string, Node*>::map() {}
-    ~SmartDefs() {
-        const_iterator it = begin();
-        while (it != end()) {
-            it->second->deleteTree();
-            it++;
-        }
-    }
-};
-
-///////////////////////////////////////////////////////////////////////////////
 // Global functions
 
 template<typename Iter>
@@ -237,7 +222,7 @@ int main(int argc, char** argv) {
             return -1;
         }
 
-        SmartDefs definitions;
+        std::map<std::string, std::unique_ptr<Node>> definitions;
         int last_sc_no = 1;
         std::map<std::string, int> sc_ids;
         std::map<std::string, int> pattern_ids;
@@ -253,7 +238,6 @@ int main(int argc, char** argv) {
             if (tt == tt_start) {  // Start condition definition
                 tt = lexer.lex();
                 if (tt != tt_id) { return syntaxError(lexer.getLineNo()); }
-
                 std::string sc_id = lexer.getVal<std::string>();
                 auto result = sc_ids.emplace(sc_id, last_sc_no);
                 if (!result.second) { return scAlreadyDefError(lexer.getLineNo(), sc_id); }
@@ -276,9 +260,9 @@ int main(int argc, char** argv) {
                 std::string reg_expr = lexer.getVal<std::string>();
 
                 REParser re_parser;
-                Node* syn_tree = re_parser.parse(definitions, reg_expr);
+                auto syn_tree = re_parser.parse(definitions, reg_expr);
                 if (!syn_tree) { return regExprError(lexer.getLineNo(), reg_expr, re_parser.getErrorPos()); }
-                auto result = definitions.emplace(reg_def_id, syn_tree);
+                auto result = definitions.emplace(reg_def_id, std::move(syn_tree));
                 if (!result.second) { return regDefAlreadyDefError(lexer.getLineNo(), reg_def_id); }
                 lexer.popMode();
             } else if (tt == tt_sep) {
@@ -328,18 +312,18 @@ int main(int argc, char** argv) {
                     sc.addValues(0, last_sc_no - 1);
                 }
 
-                Node* syn_tree = 0;
+                std::unique_ptr<Node> syn_tree;
                 if (tt == tt_reg_expr) {
                     std::string pattern = lexer.getVal<std::string>();
                     REParser re_parser;
                     syn_tree = re_parser.parse(definitions, pattern);
                     if (!syn_tree) { return regExprError(lexer.getLineNo(), pattern, re_parser.getErrorPos()); }
                 } else if (tt == tt_eof_expr) {
-                    syn_tree = new SymbNode(0);  // Add <<EOF>> pattern
+                    syn_tree = std::make_unique<SymbNode>(0);  // Add <<EOF>> pattern
                 } else {
                     return syntaxError(lexer.getLineNo());
                 }
-                dfa_builder.addPattern(syn_tree, sc);
+                dfa_builder.addPattern(std::move(syn_tree), sc);
                 lexer.popMode();
             } else if ((tt == 0) || (tt == tt_sep)) {
                 break;

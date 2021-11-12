@@ -2,6 +2,7 @@
 
 #include "valset.h"
 
+#include <memory>
 #include <vector>
 
 class Node;
@@ -9,13 +10,12 @@ class Node;
 // DFA builder class
 class DfaBuilder {
  public:
-    ~DfaBuilder();
     bool getCaseSensitive() const { return case_sensitive_; };
     void setCaseSensitive(bool flag) { case_sensitive_ = flag; };
     int getPatternCount() const { return (int)patterns_.size(); };
     int getScCount() const { return sc_count_; };
     void setScCount(int count) { sc_count_ = count; };
-    void addPattern(Node* syn_tree, const ValueSet& sc);
+    void addPattern(std::unique_ptr<Node> syn_tree, const ValueSet& sc);
     void build(std::vector<std::vector<int>>& Dtran, std::vector<int>& accept, std::vector<ValueSet>& lls);
     void optimize(std::vector<std::vector<int>>& Dtran, std::vector<int>& accept, std::vector<ValueSet>& lls);
     void compressDtran(const std::vector<std::vector<int>>& Dtran, std::vector<int>& symb2meta, std::vector<int>& def,
@@ -27,11 +27,11 @@ class DfaBuilder {
     static const int kSegSizeWeight = 1;
 
     bool case_sensitive_ = true;
-    int sc_count_ = 0;                 // Start condition count
-    std::vector<Node*> patterns_;      // Pattern syntax trees
-    std::vector<ValueSet> sc_;         // Pattern start conditions
-    std::vector<Node*> positions_;     // Leaf positions
-    std::vector<ValueSet> followpos_;  // followpos(id) function
+    int sc_count_ = 0;                             // Start condition count
+    std::vector<std::unique_ptr<Node>> patterns_;  // Pattern syntax trees
+    std::vector<ValueSet> sc_;                     // Pattern start conditions
+    std::vector<Node*> positions_;                 // Leaf positions
+    std::vector<ValueSet> followpos_;              // followpos(id) function
 
     void scatterPositions();
     void calcFunctions();
