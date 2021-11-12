@@ -104,11 +104,42 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
                 }
             }
         }
-
-        if (case_insensitive) {
-            for (unsigned symb = 'a'; symb <= 'z'; ++symb) { Dtran_[T_idx][symb] = Dtran_[T_idx][std::toupper(symb)]; }
-        }
     } while (pending_states.size() > 0);
+
+    auto is_dead_symb = [&Dtran = Dtran_](unsigned s) {
+        return std::all_of(Dtran.begin(), Dtran.end(), [s](const auto& T) { return T[s] == -1; });
+    };
+
+    auto get_equiv_symb = [&Dtran = Dtran_](unsigned s) {
+        for (unsigned s2 = 0; s2 < s; ++s2) {
+            if (std::all_of(Dtran.begin(), Dtran.end(), [s, s2](const auto& T) { return T[s] == T[s2]; })) {
+                return s2;
+            }
+        }
+        return s;
+    };
+
+    // Build `symb->meta` table
+    symb2meta_.resize(kSymbCount);
+    for (unsigned symb = 0; symb < kSymbCount; ++symb) {
+        if (case_insensitive && std::islower(symb)) {
+            symb2meta_[symb] = symb2meta_[std::toupper(symb)];
+        } else if (is_dead_symb(symb)) {
+            symb2meta_[symb] = -1;
+        } else if (unsigned equiv = get_equiv_symb(symb); equiv < symb) {
+            symb2meta_[symb] = symb2meta_[equiv];
+        } else {
+            symb2meta_[symb] = static_cast<int>(meta_count_++);
+        }
+    }
+
+    // Replace symbol codes with meta codes in Dtran
+    for (auto& T : Dtran_) {
+        int meta = 0;
+        for (unsigned symb = 0; symb < kSymbCount; ++symb) {
+            if (symb2meta_[symb] >= meta) { T[meta++] = T[symb]; }
+        }
+    }
 
     auto get_accept = [&positions](const ValueSet& T) -> int {
         for (unsigned pos : T) {
@@ -132,6 +163,7 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
         return patterns;
     };
 
+    // Build `accept` and `LLS` tables
     accept_.reserve(states.size());
     lls_.reserve(states.size());
     for (const auto& T : states) {
@@ -139,8 +171,9 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
         lls_.emplace_back(get_lls_patterns(T));
     }
 
+    std::cout << " - meta-symbol count: " << meta_count_ << std::endl;
     std::cout << " - state count: " << Dtran_.size() << std::endl;
-    std::cout << " - transition table size: " << Dtran_.size() * sizeof(*Dtran_.begin()) << " bytes" << std::endl;
+    std::cout << " - transition table size: " << meta_count_ * Dtran_.size() * sizeof(int) << " bytes" << std::endl;
     std::cout << "Done." << std::endl;
 }
 
@@ -177,12 +210,12 @@ void DfaBuilder::optimize() {
     unsigned prev_group_count = 0;
     do {
         prev_group_count = static_cast<unsigned>(group_main_state.size());
-        for (unsigned symb = 0; symb < kSymbCount; ++symb) {
+        for (unsigned meta = 0; meta < meta_count_; ++meta) {
             std::vector<std::unordered_map<int, unsigned>> group_tran(group_main_state.size());
             std::vector<unsigned> saved_state_group = state_group;  // Use unmodified group numbers
             for (unsigned state = 0; state < Dtran_.size(); ++state) {
                 unsigned group = saved_state_group[state];
-                int next_group = Dtran_[state][symb] >= 0 ? saved_state_group[Dtran_[state][symb]] : -1;
+                int next_group = Dtran_[state][meta] >= 0 ? saved_state_group[Dtran_[state][meta]] : -1;
                 auto [it, success] = group_tran[group].emplace(next_group, group);
                 if (success && group_tran[group].size() > 1) {  // The group needs splitting, add new group
                     state_group[state] = static_cast<unsigned>(group_main_state.size());
@@ -250,9 +283,9 @@ void DfaBuilder::optimize() {
     // Build optimized DFA table
     for (unsigned state = 0; state < Dtran_.size(); ++state) {
         if (int new_state_idx = new_state_indices[state]; new_state_idx >= 0) {
-            for (unsigned symb = 0; symb < kSymbCount; ++symb) {
-                int next = Dtran_[state][symb] >= 0 ? get_main_state(Dtran_[state][symb]) : -1;
-                Dtran_[new_state_idx][symb] = next >= 0 ? new_state_indices[next] : -1;
+            for (unsigned meta = 0; meta < meta_count_; ++meta) {
+                int next = Dtran_[state][meta] >= 0 ? get_main_state(Dtran_[state][meta]) : -1;
+                Dtran_[new_state_idx][meta] = next >= 0 ? new_state_indices[next] : -1;
             }
             accept_[new_state_idx] = accept_[state];
             lls_[new_state_idx] = lls_[state];
@@ -263,74 +296,44 @@ void DfaBuilder::optimize() {
     lls_.resize(new_state_count);
 
     std::cout << " - new state count: " << Dtran_.size() << std::endl;
-    std::cout << " - transition table size: " << Dtran_.size() * sizeof(*Dtran_.begin()) << " bytes" << std::endl;
+    std::cout << " - transition table size: " << meta_count_ * Dtran_.size() * sizeof(int) << " bytes" << std::endl;
     std::cout << "Done." << std::endl;
 }
 
-void DfaBuilder::makeCompressedDtran(std::vector<int>& symb2meta, std::vector<int>& def, std::vector<int>& base,
-                                     std::vector<int>& next, std::vector<int>& check) const {
+void DfaBuilder::makeCompressedDtran(std::vector<int>& def, std::vector<int>& base, std::vector<int>& next,
+                                     std::vector<int>& check) const {
     std::cout << "Compressing tables..." << std::endl;
 
     assert(!Dtran_.empty());
-    symb2meta.resize(kSymbCount);
     def.resize(Dtran_.size());
     base.resize(Dtran_.size());
     next.reserve(10000);
     check.reserve(10000);
-
-    auto is_dead_symb = [&Dtran = Dtran_](unsigned s) {
-        return std::all_of(Dtran.begin(), Dtran.end(), [s](const auto& T) { return T[s] == -1; });
-    };
-
-    auto get_equiv_symb = [&Dtran = Dtran_](unsigned s) {
-        for (unsigned s2 = 0; s2 < s; ++s2) {
-            if (std::all_of(Dtran.begin(), Dtran.end(), [s, s2](const auto& T) { return T[s] == T[s2]; })) {
-                return s2;
-            }
-        }
-        return s;
-    };
-
-    // Build `symb->meta` table
-    std::vector<unsigned> meta2symb;  // Inversed table
-    meta2symb.reserve(kSymbCount);
-    for (unsigned symb = 0; symb < kSymbCount; ++symb) {
-        if (is_dead_symb(symb)) {
-            symb2meta[symb] = -1;
-        } else if (unsigned equiv = get_equiv_symb(symb); equiv < symb) {
-            symb2meta[symb] = symb2meta[equiv];
-        } else {
-            symb2meta[symb] = static_cast<int>(meta2symb.size());
-            meta2symb.push_back(symb);
-        }
-    }
-
-    std::cout << " - meta-character count: " << meta2symb.size() << std::endl;
 
     auto calc_diffs_weight = [](const auto& diffs) {
         return kCountWeight * static_cast<unsigned>(diffs.size()) +
                kSegSizeWeight * static_cast<unsigned>(diffs.back() - diffs.front() + 1);
     };
 
-    auto compare_with_all_failed_state = [&meta2symb, calc_diffs_weight](const auto& T, auto& diffs) {
+    auto compare_with_all_failed_state = [meta_count = meta_count_, calc_diffs_weight](const auto& T, auto& diffs) {
         diffs.clear();
-        for (unsigned meta = 0; meta < meta2symb.size(); ++meta) {
-            if (T[meta2symb[meta]] != -1) { diffs.push_back(meta); }
+        for (unsigned meta = 0; meta < meta_count; ++meta) {
+            if (T[meta] != -1) { diffs.push_back(meta); }
         }
         return !diffs.empty() ? calc_diffs_weight(diffs) : 0u;
     };
 
-    auto compare_states = [&meta2symb, calc_diffs_weight](const auto& T, const auto& U, auto& diffs) {
+    auto compare_states = [meta_count = meta_count_, calc_diffs_weight](const auto& T, const auto& U, auto& diffs) {
         diffs.clear();
-        for (unsigned meta = 0; meta < meta2symb.size(); ++meta) {
-            if (T[meta2symb[meta]] != U[meta2symb[meta]]) { diffs.push_back(meta); }
+        for (unsigned meta = 0; meta < meta_count; ++meta) {
+            if (T[meta] != U[meta]) { diffs.push_back(meta); }
         }
         return !diffs.empty() ? calc_diffs_weight(diffs) : 0u;
     };
 
     unsigned first_free = 0;
     std::vector<unsigned> diffs;
-    diffs.reserve(meta2symb.size());
+    diffs.reserve(meta_count_);
 
     for (unsigned state = 0; state < Dtran_.size(); ++state) {
         const auto& T = Dtran_[state];
@@ -379,14 +382,14 @@ void DfaBuilder::makeCompressedDtran(std::vector<int>& symb2meta, std::vector<in
         base[state] = base_offset;
 
         // Append compressed table
-        unsigned upper_bound = base_offset + static_cast<unsigned>(meta2symb.size());
+        unsigned upper_bound = base_offset + meta_count_;
         if (upper_bound > check.size()) { check.resize(upper_bound, -1); }
 
         // Save compressed state
         next.resize(check.size());
         for (unsigned meta : diffs) {
             unsigned l = base_offset + meta;
-            next[l] = Dtran_[state][meta2symb[meta]], check[l] = state;
+            next[l] = Dtran_[state][meta], check[l] = state;
         }
 
         // Move to the nearest free cell
@@ -395,14 +398,13 @@ void DfaBuilder::makeCompressedDtran(std::vector<int>& symb2meta, std::vector<in
 
     // Fill free next & check cells
     for (unsigned state = 0; state < base.size(); ++state) {
-        for (unsigned meta = 0; meta < meta2symb.size(); ++meta) {
+        for (unsigned meta = 0; meta < meta_count_; ++meta) {
             unsigned l = base[state] + meta;
-            if (check[l] < 0) { next[l] = Dtran_[state][meta2symb[meta]], check[l] = state; }
+            if (check[l] < 0) { next[l] = Dtran_[state][meta], check[l] = state; }
         }
     }
 
     std::cout << " - total compressed transition table size: "
-              << (symb2meta.size() + def.size() + base.size() + next.size() + check.size()) * sizeof(int) << " bytes"
-              << std::endl;
+              << (def.size() + base.size() + next.size() + check.size()) * sizeof(int) << " bytes" << std::endl;
     std::cout << "Done." << std::endl;
 }

@@ -66,7 +66,7 @@ static int lls_list[1] = {
     1
 };
 
-int lex(StateData& data, int state) {
+static int lex(StateData& data, int state) {
     enum { kDeadFlag = 1, kTrailContFlag = 2, kFlagCount = 2 };
     if (data.state_stack.empty()) { data.pat_length = 0; }
 

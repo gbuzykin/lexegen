@@ -22,11 +22,13 @@ class DfaBuilder {
                bool case_insensitive  // Case insensitive DFA?
     );
     void optimize();
+    unsigned getMetaCount() const { return meta_count_; }
+    const std::vector<int>& getSymb2Meta() const { return symb2meta_; }
     const std::vector<std::array<int, kSymbCount>>& getDtran() const { return Dtran_; }
     const std::vector<int>& getAccept() const { return accept_; }
     const std::vector<ValueSet>& getLLS() const { return lls_; }
-    void makeCompressedDtran(std::vector<int>& symb2meta, std::vector<int>& def, std::vector<int>& base,
-                             std::vector<int>& next, std::vector<int>& check) const;
+    void makeCompressedDtran(std::vector<int>& def, std::vector<int>& base, std::vector<int>& next,
+                             std::vector<int>& check) const;
 
  protected:
     struct Pattern {
@@ -35,7 +37,9 @@ class DfaBuilder {
     };
 
     unsigned sc_count_ = 0;
+    unsigned meta_count_ = 0;
     std::vector<Pattern> patterns_;
+    std::vector<int> symb2meta_;
     std::vector<std::array<int, kSymbCount>> Dtran_;
     std::vector<int> accept_;
     std::vector<ValueSet> lls_;
