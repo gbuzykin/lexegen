@@ -29,7 +29,6 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
     std::vector<PositionalNode*> positions;
     std::vector<ValueSet> states;
     sc_count_ = sc_count;
-    case_insensitive_ = case_insensitive;
 
     // Scatter positions and calculate node functions
     for (const auto& pat : patterns_) { pat.syn_tree->calcFunctions(positions); }
@@ -272,137 +271,133 @@ void DfaBuilder::makeCompressedDtran(std::vector<int>& symb2meta, std::vector<in
                                      std::vector<int>& next, std::vector<int>& check) const {
     std::cout << "Compressing tables..." << std::endl;
 
-    // Clear compressed Dtran
-    unsigned state_count = static_cast<unsigned>(Dtran_.size());
-    assert(state_count > 0);
-    // Build used symbols set
-    ValueSet used_symbols;
-    for (unsigned state = 0; state < state_count; ++state) {
-        for (unsigned symb = 0; symb < kSymbCount; ++symb) {
-            if (Dtran_[state][symb] != -1) { used_symbols.addValue(symb); }
-        }
-    }
-    // Build symb2meta table
+    assert(!Dtran_.empty());
     symb2meta.resize(kSymbCount);
-    std::vector<int> meta2symb;  // Inversed table
-    unsigned used_symb_count = 0;
+    def.resize(Dtran_.size());
+    base.resize(Dtran_.size());
+    next.reserve(10000);
+    check.reserve(10000);
+
+    auto is_dead_symb = [&Dtran = Dtran_](unsigned s) {
+        return std::all_of(Dtran.begin(), Dtran.end(), [s](const auto& T) { return T[s] == -1; });
+    };
+
+    auto get_equiv_symb = [&Dtran = Dtran_](unsigned s) {
+        for (unsigned s2 = 0; s2 < s; ++s2) {
+            if (std::all_of(Dtran.begin(), Dtran.end(), [s, s2](const auto& T) { return T[s] == T[s2]; })) {
+                return s2;
+            }
+        }
+        return s;
+    };
+
+    // Build `symb->meta` table
+    std::vector<unsigned> meta2symb;  // Inversed table
+    meta2symb.reserve(kSymbCount);
     for (unsigned symb = 0; symb < kSymbCount; ++symb) {
-        if (used_symbols.contains(symb)) {
-            symb2meta[symb] = used_symb_count;
-            if (case_insensitive_ && std::islower(symb)) { symb2meta[std::toupper(symb)] = used_symb_count; }
-            meta2symb.push_back(symb);
-            ++used_symb_count;
-        } else {
+        if (is_dead_symb(symb)) {
             symb2meta[symb] = -1;
-        }
-    }
-    // Initialize arrays
-    next.clear();
-    check.clear();
-    def.resize(state_count);
-    base.resize(state_count);
-    std::vector<unsigned> difs(used_symb_count);
-    unsigned first_free = 0;
-    // Run through all states
-    for (unsigned state = 0; state < state_count; ++state) {
-        unsigned sim_state = state;
-        const auto& T = Dtran_[state];
-        // Find similar state
-        unsigned dif_count = 0;
-        unsigned dif_seg_size = 0;
-        // Compare with 'all failed' state
-        for (unsigned meta = 0; meta < used_symb_count; ++meta) {
-            if (T[meta2symb[meta]] != -1) { difs[dif_count++] = meta; }
-        }
-        if (dif_count > 0) {
-            dif_seg_size = difs[dif_count - 1] - difs[0] + 1;
-            // Compare with other compressed states
-            for (unsigned state2 = 0; state2 < state; ++state2) {
-                unsigned first_dif = 0;
-                unsigned dif_count2 = 0;
-                unsigned dif_seg_size2 = 0;
-                const auto& U = Dtran_[state2];
-                for (unsigned meta = 0; meta < used_symb_count; ++meta) {
-                    int symb = meta2symb[meta];
-                    if (T[symb] != U[symb]) {
-                        if (dif_count2 == 0) { first_dif = meta; }
-                        dif_seg_size2 = meta - first_dif + 1;
-                        dif_count2++;
-                    }
-                }
-                // Find optimum
-                if ((kCountWeight * dif_count2 + kSegSizeWeight * dif_seg_size2) <
-                    (kCountWeight * dif_count + kSegSizeWeight * dif_seg_size)) {
-                    sim_state = state2;
-                }
-            }
-        }
-        if (sim_state != state) {
-            dif_count = 0;
-            const auto& U = Dtran_[sim_state];
-            for (unsigned meta = 0; meta < used_symb_count; ++meta) {
-                int symb = meta2symb[meta];
-                if (T[symb] != U[symb]) { difs[dif_count++] = meta; }
-            }
-            // Save default state
-            def[state] = sim_state;
+        } else if (unsigned equiv = get_equiv_symb(symb); equiv < symb) {
+            symb2meta[symb] = symb2meta[equiv];
         } else {
-            def[state] = -1;
-        }
-
-        unsigned compr_tbl_size = static_cast<unsigned>(next.size());
-        assert(compr_tbl_size == check.size());
-        unsigned b = first_free;
-        if (dif_count) {
-            // Find unused space
-            assert(difs.size() > 0);
-            unsigned i = first_free;
-            if (difs[0] > first_free) { i = difs[0]; }
-            b = i - difs[0];
-            for (; i < compr_tbl_size; ++i, ++b) {
-                bool match = true;
-                for (unsigned j = 0; j < dif_count; ++j) {
-                    unsigned l = b + difs[j];
-                    if (l >= compr_tbl_size) { break; }
-                    if (check[l] != -1) {
-                        match = false;
-                        break;
-                    }
-                }
-                if (match) { break; }
-            }
-        }
-
-        // Save base
-        base[state] = b;
-        // Append compressed Dtran
-        unsigned upper_bound = b + used_symb_count;
-        if (upper_bound > compr_tbl_size) {
-            next.resize(upper_bound);
-            check.resize(upper_bound);
-            for (unsigned i = compr_tbl_size; i < upper_bound; i++) { check[i] = -1; }
-            compr_tbl_size = upper_bound;
-        }
-        // Save compressed state
-        for (unsigned j = 0; j < dif_count; ++j) {
-            unsigned l = b + difs[j];
-            next[l] = Dtran_[state][meta2symb[difs[j]]];
-            check[l] = state;
-        }
-        // Correct first_free
-        for (; first_free < compr_tbl_size; first_free++) {
-            if (check[first_free] == -1) { break; }
+            symb2meta[symb] = static_cast<int>(meta2symb.size());
+            meta2symb.push_back(symb);
         }
     }
 
-    // Fill unused next & check cells
-    for (unsigned state = 0; state < state_count; ++state) {
-        for (unsigned meta = 0; meta < used_symb_count; ++meta) {
-            unsigned l = base[state] + meta;
-            if (check[l] == -1) {  // Unused
-                next[l] = Dtran_[state][meta2symb[meta]];
-                check[l] = state;
+    std::cout << " - meta-character count: " << meta2symb.size() << std::endl;
+
+    auto calc_diffs_weight = [](const auto& diffs) {
+        return kCountWeight * static_cast<unsigned>(diffs.size()) +
+               kSegSizeWeight * static_cast<unsigned>(diffs.back() - diffs.front() + 1);
+    };
+
+    auto compare_with_all_failed_state = [&meta2symb, calc_diffs_weight](const auto& T, auto& diffs) {
+        diffs.clear();
+        for (unsigned meta = 0; meta < meta2symb.size(); ++meta) {
+            if (T[meta2symb[meta]] != -1) { diffs.push_back(meta); }
+        }
+        return !diffs.empty() ? calc_diffs_weight(diffs) : 0u;
+    };
+
+    auto compare_states = [&meta2symb, calc_diffs_weight](const auto& T, const auto& U, auto& diffs) {
+        diffs.clear();
+        for (unsigned meta = 0; meta < meta2symb.size(); ++meta) {
+            if (T[meta2symb[meta]] != U[meta2symb[meta]]) { diffs.push_back(meta); }
+        }
+        return !diffs.empty() ? calc_diffs_weight(diffs) : 0u;
+    };
+
+    unsigned first_free = 0;
+    std::vector<unsigned> diffs;
+    diffs.reserve(meta2symb.size());
+
+    for (unsigned state = 0; state < Dtran_.size(); ++state) {
+        const auto& T = Dtran_[state];
+
+        // Find similar state minimizing `diffs` weight
+        int sim_state = -1;
+        unsigned min_weight = compare_with_all_failed_state(T, diffs);
+        if (min_weight > 0) {
+            for (unsigned state2 = 0; state2 < state; ++state2) {
+                unsigned weight = compare_states(T, Dtran_[state2], diffs);
+                if (weight < min_weight) {
+                    sim_state = state2;
+                    if (weight == 0) { break; }
+                    min_weight = weight;
+                }
             }
+        }
+
+        // Save default state
+        def[state] = sim_state;
+
+        // Restore `diffs` vector
+        if (sim_state >= 0) {  // `all-failed` is default state
+            compare_states(T, Dtran_[sim_state], diffs);
+        } else {
+            compare_with_all_failed_state(T, diffs);
+        }
+
+        unsigned base_offset = first_free;
+        if (!diffs.empty()) {
+            auto base_offset_fits = [&diffs, &check](unsigned offset) {
+                for (unsigned meta : diffs) {
+                    unsigned l = offset + meta;
+                    if (l >= check.size()) { break; }
+                    if (check[l] >= 0) { return false; }
+                }
+                return true;
+            };
+
+            // Find unused space
+            base_offset = first_free > diffs[0] ? first_free - diffs[0] : 0;
+            while (base_offset < check.size() && !base_offset_fits(base_offset)) { ++base_offset; }
+        }
+
+        // Save compressed table base offset
+        base[state] = base_offset;
+
+        // Append compressed table
+        unsigned upper_bound = base_offset + static_cast<unsigned>(meta2symb.size());
+        if (upper_bound > check.size()) { check.resize(upper_bound, -1); }
+
+        // Save compressed state
+        next.resize(check.size());
+        for (unsigned meta : diffs) {
+            unsigned l = base_offset + meta;
+            next[l] = Dtran_[state][meta2symb[meta]], check[l] = state;
+        }
+
+        // Move to the nearest free cell
+        while (first_free < check.size() && check[first_free] >= 0) { ++first_free; }
+    }
+
+    // Fill free next & check cells
+    for (unsigned state = 0; state < base.size(); ++state) {
+        for (unsigned meta = 0; meta < meta2symb.size(); ++meta) {
+            unsigned l = base[state] + meta;
+            if (check[l] < 0) { next[l] = Dtran_[state][meta2symb[meta]], check[l] = state; }
         }
     }
 

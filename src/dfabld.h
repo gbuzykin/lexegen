@@ -35,7 +35,6 @@ class DfaBuilder {
     };
 
     unsigned sc_count_ = 0;
-    bool case_insensitive_ = false;
     std::vector<Pattern> patterns_;
     std::vector<std::array<int, kSymbCount>> Dtran_;
     std::vector<int> accept_;
