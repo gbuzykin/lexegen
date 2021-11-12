@@ -14,16 +14,18 @@ Parser::Parser(std::istream& input, std::string file_name)
 
 int Parser::parse() {
     size_t file_sz = static_cast<size_t>(input_.seekg(0, std::ios_base::end).tellg());
-    lex_state_.text.resize(file_sz + 1);
+    text_ = std::make_unique<char[]>(file_sz + 1);
 
     // Read the whole file
     input_.seekg(0);
-    input_.read(lex_state_.text.data(), file_sz);
-    lex_state_.text.back() = '\0';
+    input_.read(text_.get(), file_sz);
+    text_[input_.gcount()] = '\0';
+    lex_ctx_.text_last = lex_ctx_.text_unread = text_.get();
+    lex_ctx_.text_boundary = text_.get() + input_.gcount() + 1;
+    current_line_.assign(lex_ctx_.text_unread, std::find_if(lex_ctx_.text_unread, lex_ctx_.text_boundary,
+                                                            [](char ch) { return ch == '\n' || ch == '\0'; }));
 
     int tt = 0;
-    lex_state_.unread_text = lex_state_.text.data();
-    current_line_ = lex_state_.unread_text;
 
     // Load definitions
     start_conditions_.emplace_back("initial");  // Add initial start condition
@@ -31,14 +33,14 @@ int Parser::parse() {
         switch (tt = lex()) {
             case tt_start: {  // Start condition definition
                 if ((tt = lex()) != tt_id) { return logSyntaxError(tt); }
-                if (std::find(start_conditions_.begin(), start_conditions_.end(), std::get<std::string>(tkn_.val)) !=
-                    start_conditions_.end()) {
+                if (std::find(start_conditions_.begin(), start_conditions_.end(),
+                              std::get<std::string_view>(tkn_.val)) != start_conditions_.end()) {
                     return logError() << "start condition is already defined.";
                 }
-                start_conditions_.emplace_back(std::move(std::get<std::string>(tkn_.val)));
+                start_conditions_.emplace_back(std::get<std::string_view>(tkn_.val));
             } break;
             case tt_id: {  // Regular definition
-                std::string name(std::move(std::get<std::string>(tkn_.val)));
+                std::string_view name = std::get<std::string_view>(tkn_.val);
                 if (definitions_.find(name) != definitions_.end()) {
                     return logError() << "regular expression is already defined.";
                 }
@@ -49,13 +51,13 @@ int Parser::parse() {
                 sc_stack_.pop_back();
 
                 if (tt < 0) { return tt; }
-                definitions_.emplace(std::move(name), std::move(syn_tree));
+                definitions_.emplace(name, std::move(syn_tree));
             } break;
             case tt_option: {  // Option
                 if ((tt = lex()) != tt_id) { return logSyntaxError(tt); }
-                std::string name(std::move(std::get<std::string>(tkn_.val)));
+                std::string_view name = std::get<std::string_view>(tkn_.val);
                 if ((tt = lex()) != tt_string) { return logSyntaxError(tt); }
-                options_.emplace(std::move(name), std::move(std::get<std::string>(tkn_.val)));
+                options_.emplace(name, std::get<std::string_view>(tkn_.val));
             } break;
             case tt_sep: break;
             default: return logSyntaxError(tt);
@@ -65,7 +67,7 @@ int Parser::parse() {
     // Load patterns
     do {
         if ((tt = lex()) == tt_id) {
-            std::string name(std::move(std::get<std::string>(tkn_.val)));
+            std::string_view name = std::get<std::string_view>(tkn_.val);
             if (std::find_if(patterns_.begin(), patterns_.end(), [&](const auto& pat) { return pat.id == name; }) !=
                 patterns_.end()) {
                 return logError() << "pattern is already defined.";
@@ -80,7 +82,7 @@ int Parser::parse() {
                 while (true) {
                     if ((tt = lex()) == tt_id) {
                         auto sc_it = std::find(start_conditions_.begin(), start_conditions_.end(),
-                                               std::get<std::string>(tkn_.val));
+                                               std::get<std::string_view>(tkn_.val));
                         if (sc_it == start_conditions_.end()) { return logError() << "undefined start condition."; }
                         sc.addValue(static_cast<unsigned>(sc_it - start_conditions_.begin()));
                     } else if (tt == '>') {
@@ -103,7 +105,7 @@ int Parser::parse() {
             sc_stack_.pop_back();
 
             if (tt < 0) { return tt; }
-            patterns_.emplace_back(Pattern{std::move(name), sc, std::move(syn_tree)});
+            patterns_.emplace_back(Pattern{name, sc, std::move(syn_tree)});
         } else if (tt != tt_sep) {
             return logSyntaxError(tt);
         }
@@ -187,12 +189,12 @@ std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
                 node_stack.emplace_back(std::make_unique<SymbSetNode>(std::get<ValueSet>(tkn_.val)));
             } break;
             case tt_id: {  // Insert subtree
-                auto pat_it = definitions_.find(std::get<std::string>(tkn_.val));
+                auto pat_it = definitions_.find(std::get<std::string_view>(tkn_.val));
                 if (pat_it == definitions_.end()) { return {nullptr, logError() << "undefined regular expression."}; }
                 node_stack.emplace_back(pat_it->second->cloneTree());
             } break;
             case tt_string: {  // Create `string` subtree
-                const auto& str = std::get<std::string>(tkn_.val);
+                const auto& str = std::get<std::string_view>(tkn_.val);
                 if (!str.empty()) {
                     std::unique_ptr<Node> str_node = std::make_unique<SymbNode>(static_cast<unsigned char>(str[0]));
                     for (size_t i = 1; i < str.size(); ++i) {
@@ -309,16 +311,20 @@ std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
 int Parser::lex() {
     bool sset_is_inverted = false, sset_range_flag = false;
     unsigned sset_last = 0;
+    const char* str_start = nullptr;
     tkn_.n_col = n_col_;
 
     while (true) {
-        if (lex_state_.pat_length > 0 && lex_state_.text[0] == '\n') {
-            current_line_ = lex_state_.unread_text;
+        if (lex_ctx_.text_last > text_.get() && *(lex_ctx_.text_last - 1) == '\n') {
+            current_line_.assign(lex_ctx_.text_unread, std::find_if(lex_ctx_.text_unread, lex_ctx_.text_boundary,
+                                                                    [](char ch) { return ch == '\n' || ch == '\0'; }));
             tkn_.n_col = n_col_ = 1;
             ++n_line_;
         }
-        int pat = lex_detail::lex(lex_state_, sc_stack_.back());
-        n_col_ += static_cast<unsigned>(lex_state_.pat_length);
+        char* lexeme = lex_ctx_.text_last;
+        int pat = lex_detail::lex(lex_ctx_, lex_state_stack_, sc_stack_.back());
+        unsigned lexeme_len = static_cast<unsigned>(lex_ctx_.text_last - lexeme);
+        n_col_ += lexeme_len;
 
         std::optional<char> escape;
         switch (pat) {
@@ -330,26 +336,25 @@ int Parser::lex() {
             case lex_detail::pat_escape_r: escape = '\r'; break;
             case lex_detail::pat_escape_t: escape = '\t'; break;
             case lex_detail::pat_escape_v: escape = '\v'; break;
-            case lex_detail::pat_escape_other: escape = lex_state_.text[1]; break;
+            case lex_detail::pat_escape_other: escape = lexeme[1]; break;
             case lex_detail::pat_escape_hex: {
-                escape = hdig(lex_state_.text[2]);
-                if (lex_state_.pat_length > 3) { *escape = (*escape << 4) + hdig(lex_state_.text[3]); }
+                escape = hdig(lexeme[2]);
+                if (lexeme_len > 3) { *escape = (*escape << 4) + hdig(lexeme[3]); }
             } break;
             case lex_detail::pat_escape_oct: {
-                escape = dig(lex_state_.text[1]);
-                if (lex_state_.pat_length > 2) { *escape = (*escape << 3) + dig(lex_state_.text[2]); }
-                if (lex_state_.pat_length > 3) { *escape = (*escape << 3) + dig(lex_state_.text[3]); }
+                escape = dig(lexeme[1]);
+                if (lexeme_len > 2) { *escape = (*escape << 3) + dig(lexeme[2]); }
+                if (lexeme_len > 3) { *escape = (*escape << 3) + dig(lexeme[3]); }
             } break;
 
             // ------ strings
             case lex_detail::pat_string: {
-                tkn_.val = std::string();
+                str_start = lex_ctx_.text_last;
                 sc_stack_.push_back(lex_detail::sc_string);
             } break;
-            case lex_detail::pat_string_seq: {
-                std::get<std::string>(tkn_.val).append(lex_state_.text.data(), lex_state_.pat_length);
-            } break;
+            case lex_detail::pat_string_seq: break;
             case lex_detail::pat_string_close: {
+                tkn_.val = std::string_view(str_start, lexeme - str_start);
                 sc_stack_.pop_back();
                 return tt_string;
             } break;
@@ -365,12 +370,12 @@ int Parser::lex() {
             } break;
             case lex_detail::pat_regex_sset_seq: {
                 if (sset_range_flag) {
-                    std::get<ValueSet>(tkn_.val).addValues(sset_last, static_cast<unsigned char>(lex_state_.text[0]));
+                    std::get<ValueSet>(tkn_.val).addValues(sset_last, static_cast<unsigned char>(*lexeme));
                     sset_range_flag = false;
                 }
-                sset_last = static_cast<unsigned char>(lex_state_.text[lex_state_.pat_length - 1]);
-                for (unsigned i = 0; i < lex_state_.pat_length; ++i) {
-                    std::get<ValueSet>(tkn_.val).addValue(static_cast<unsigned char>(lex_state_.text[i]));
+                sset_last = static_cast<unsigned char>(*(lex_ctx_.text_last - 1));
+                for (const char* l = lexeme; l < lex_ctx_.text_last; ++l) {
+                    std::get<ValueSet>(tkn_.val).addValue(static_cast<unsigned char>(*l));
                 }
             } break;
             case lex_detail::pat_regex_sset_range: {
@@ -392,7 +397,7 @@ int Parser::lex() {
                 return tt_sset;
             } break;
             case lex_detail::pat_regex_symb: {
-                tkn_.val = static_cast<unsigned char>(lex_state_.text[0]);
+                tkn_.val = static_cast<unsigned char>(*lexeme);
                 return tt_symb;
             } break;
             case lex_detail::pat_regex_eof_symb: {
@@ -400,7 +405,7 @@ int Parser::lex() {
                 return tt_symb;
             } break;
             case lex_detail::pat_regex_id: {  // {id}
-                tkn_.val = std::string(lex_state_.text.data() + 1, lex_state_.pat_length - 2);
+                tkn_.val = std::string_view(lexeme + 1, lex_ctx_.text_last - lexeme - 2);
                 return tt_id;
             } break;
             case lex_detail::pat_regex_br: {
@@ -414,23 +419,22 @@ int Parser::lex() {
 
             // ------ identifier
             case lex_detail::pat_id: {
-                tkn_.val = std::string(lex_state_.text.data(), lex_state_.pat_length);
+                tkn_.val = std::string_view(lexeme, lex_ctx_.text_last - lexeme);
                 return tt_id;
             } break;
 
             // ------ integer number
             case lex_detail::pat_num: {
                 unsigned num = 0;
-                for (unsigned i = 0; i < lex_state_.pat_length; ++i) { num = 10 * num + dig(lex_state_.text[i]); }
+                for (const char* l = lexeme; l < lex_ctx_.text_last; ++l) { num = 10 * num + dig(*l); }
                 tkn_.val = num;
                 return tt_num;
             } break;
 
             // ------ comment
             case lex_detail::pat_comment: {  // Eat up comment
-                auto* p = lex_state_.unread_text;
-                while (*p != '\n' && *p != '\0') { ++p; }
-                lex_state_.unread_text = p;
+                lex_ctx_.text_unread = std::find_if(lex_ctx_.text_unread, lex_ctx_.text_boundary,
+                                                    [](char ch) { return ch == '\n' || ch == '\0'; });
             } break;
 
             // ------ other
@@ -439,7 +443,7 @@ int Parser::lex() {
             case lex_detail::pat_start: return tt_start;
             case lex_detail::pat_option: return tt_option;
             case lex_detail::pat_sep: return tt_sep;
-            case lex_detail::pat_other: return static_cast<unsigned char>(lex_state_.text[0]);
+            case lex_detail::pat_other: return static_cast<unsigned char>(*lexeme);
             case lex_detail::pat_eof: return tt_eof;
             case lex_detail::pat_whitespace: tkn_.n_col = n_col_; break;
             case lex_detail::pat_nl: break;
@@ -449,7 +453,10 @@ int Parser::lex() {
 
         if (escape) {  // Process escape character
             switch (sc_stack_.back()) {
-                case lex_detail::sc_string: std::get<std::string>(tkn_.val).push_back(*escape); break;
+                case lex_detail::sc_string: {
+                    *lexeme = *escape;
+                    lex_ctx_.text_last = lexeme + 1;
+                } break;
                 case lex_detail::sc_sset: {
                     if (sset_range_flag) {
                         std::get<ValueSet>(tkn_.val).addValues(sset_last, static_cast<unsigned char>(*escape));
@@ -482,16 +489,14 @@ int Parser::logSyntaxError(int tt) const {
 void Parser::printError(const std::string& msg) const {
     std::cerr << file_name_ << ":" << n_line_ << ":" << tkn_.n_col << ": error: " << msg << std::endl;
 
-    const auto* line_end = current_line_;
-    while (*line_end != '\n' && *line_end != '\0') { ++line_end; }
-    if (line_end == current_line_) { return; }
+    if (current_line_.empty()) { return; }
 
     uint32_t code = 0;
     const unsigned tab_size = 4;
     unsigned col = 0, current_col = 0;
     std::string tab2space_line, n_line = std::to_string(n_line_);
-    tab2space_line.reserve(line_end - current_line_);
-    for (auto p = current_line_, p1 = p; (p1 = detail::from_utf8(p, line_end, &code)) > p; p = p1) {
+    tab2space_line.reserve(current_line_.size());
+    for (auto p = current_line_.begin(), p1 = p; (p1 = detail::from_utf8(p, current_line_.end(), &code)) > p; p = p1) {
         if (code == '\t') {
             auto align_up = [](unsigned v, unsigned base) { return (v + base - 1) & ~(base - 1); };
             unsigned tab_pos = align_up(col + 1, tab_size);
@@ -500,7 +505,7 @@ void Parser::printError(const std::string& msg) const {
             while (p < p1) { tab2space_line.push_back(*p++); }
             ++col;
         }
-        if (p - current_line_ < tkn_.n_col) { current_col = col; }
+        if (p - current_line_.begin() < tkn_.n_col) { current_col = col; }
     }
 
     std::cerr << " " << n_line << " | " << tab2space_line << std::endl;

@@ -52,9 +52,9 @@ static int check[329] = {
 };
 
 static int accept[70] = {
-    0, 0, 0, 0, 0, 0, 149, 105, 68, 97, 137, 141, 81, 104, 72, 104, 92, 0, 89, 45, 8, 17, 21, 25, 33, 29, 37, 41, 44,
-    12, 13, 8, 9, 77, 0, 0, 0, 0, 7, 0, 0, 0, 0, 85, 128, 101, 109, 56, 61, 140, 65, 104, 48, 53, 145, 133, 140, 124,
-    121, 0, 0, 0, 0, 0, 113, 0, 0, 0, 0, 117
+    0, 0, 0, 0, 0, 0, 74, 52, 34, 48, 68, 70, 40, 52, 36, 52, 46, 0, 44, 22, 4, 8, 10, 12, 16, 14, 18, 20, 22, 6, 6, 4,
+    4, 38, 0, 0, 0, 0, 3, 0, 0, 0, 0, 42, 64, 50, 54, 28, 30, 70, 32, 52, 24, 26, 72, 66, 70, 62, 60, 0, 0, 0, 0, 0, 56,
+    0, 0, 0, 0, 58
 };
 
 static int lls_idx[71] = {
@@ -66,15 +66,14 @@ static int lls_list[1] = {
     1
 };
 
-static int lex(StateData& data, int state) {
-    enum { kDeadFlag = 1, kTrailContFlag = 2, kFlagCount = 2 };
-    if (data.state_stack.empty()) { data.pat_length = 0; }
+static int lex(CtxData& ctx, std::vector<int>& state_stack, int state) {
+    enum { kTrailContFlag = 1, kFlagCount = 1 };
 
     // Fill buffers till transition is impossible
     char symb = '\0';
     do {
-        if (data.unread_text == data.text.data() + data.text.size()) { return -1; }
-        symb = *data.unread_text;
+        if (ctx.text_unread == ctx.text_boundary) { return -1; }
+        symb = *ctx.text_unread;
         int meta = symb2meta[static_cast<unsigned char>(symb)];
         if (meta < 0) { break; }
         do {
@@ -86,38 +85,38 @@ static int lex(StateData& data, int state) {
             state = def[state];
         } while (state >= 0);
         if (state < 0) { break; }
-        data.text[data.pat_length++] = symb;
-        ++data.unread_text;
-        data.state_stack.push_back(state);
-    } while (symb != 0 && !(accept[state] & kDeadFlag));
+        *ctx.text_last++ = symb;
+        ++ctx.text_unread;
+        state_stack.push_back(state);
+    } while (symb != 0);
 
     // Unroll downto last accepting state
-    while (!data.state_stack.empty()) {
-        int n_pat = accept[data.state_stack.back()];
+    while (!state_stack.empty()) {
+        int n_pat = accept[state_stack.back()];
         if (n_pat > 0) {
             bool has_trailling_context = n_pat & kTrailContFlag;
             n_pat >>= kFlagCount;
             if (has_trailling_context) {
                 do {
-                    state = data.state_stack.back();
+                    state = state_stack.back();
                     for (int i = lls_idx[state]; i < lls_idx[state + 1]; ++i) {
                         if (lls_list[i] == n_pat) {
-                            data.state_stack.clear();
+                            state_stack.clear();
                             return n_pat;
                         }
                     }
-                    *(--data.unread_text) = data.text[--data.pat_length];
-                    data.state_stack.pop_back();
-                } while (!data.state_stack.empty());
+                    *(--ctx.text_unread) = *(--ctx.text_last);
+                    state_stack.pop_back();
+                } while (!state_stack.empty());
             }
-            data.state_stack.clear();
+            state_stack.clear();
             return n_pat;
         }
-        *(--data.unread_text) = data.text[--data.pat_length];
-        data.state_stack.pop_back();
+        *(--ctx.text_unread) = *(--ctx.text_last);
+        state_stack.pop_back();
     }
 
     // Default pattern
-    data.text[data.pat_length++] = *data.unread_text++;
+    *ctx.text_last++ = *ctx.text_unread++;
     return predef_pat_default;
 }

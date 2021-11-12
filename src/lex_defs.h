@@ -50,9 +50,8 @@ enum {
     sc_sc_list,
 };
 
-struct StateData {
-    size_t pat_length = 0;
-    char* unread_text = nullptr;
-    std::vector<char> text;
-    std::vector<int> state_stack;
+struct CtxData {
+    char* text_last = nullptr;
+    char* text_unread = nullptr;
+    char* text_boundary = nullptr;
 };

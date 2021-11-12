@@ -56,7 +56,7 @@ class Node;
 class Parser {
  public:
     struct Pattern {
-        std::string id;
+        std::string_view id;
         ValueSet sc;
         std::unique_ptr<Node> syn_tree;
     };
@@ -70,7 +70,7 @@ class Parser {
  private:
     struct TokenInfo {
         unsigned n_col = 0;
-        std::variant<unsigned, ValueSet, std::string> val;
+        std::variant<unsigned, std::string_view, ValueSet> val;
     };
 
     struct ErrorLogger {
@@ -94,13 +94,15 @@ class Parser {
 
     std::istream& input_;
     std::string file_name_;
-    const char* current_line_ = nullptr;
+    std::unique_ptr<char[]> text_;
+    std::string current_line_;
     unsigned n_line_ = 1, n_col_ = 1;
     std::vector<int> sc_stack_;
-    lex_detail::StateData lex_state_;
+    lex_detail::CtxData lex_ctx_;
+    std::vector<int> lex_state_stack_;
     TokenInfo tkn_;
-    std::unordered_map<std::string, std::string> options_;
-    std::unordered_map<std::string, std::unique_ptr<Node>> definitions_;
+    std::unordered_map<std::string_view, std::string_view> options_;
+    std::unordered_map<std::string_view, std::unique_ptr<Node>> definitions_;
     std::vector<std::string> start_conditions_;
     std::vector<Pattern> patterns_;
 

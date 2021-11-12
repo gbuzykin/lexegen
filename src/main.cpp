@@ -37,11 +37,10 @@ void outputArray(std::ostream& outp, const std::string& array_name, Iter from, I
 void outputLexDefs(std::ostream& outp) {
     // clang-format off
     static constexpr std::string_view text[] = {
-        "struct StateData {",
-        "    size_t pat_length = 0;",
-        "    char* unread_text = nullptr;",
-        "    std::vector<char> text;",
-        "    std::vector<int> state_stack;",
+        "struct CtxData {",
+        "    char* text_last = nullptr;",
+        "    char* text_unread = nullptr;",
+        "    char* text_boundary = nullptr;",
         "};",
     };
     // clang-format on
@@ -52,15 +51,14 @@ void outputLexDefs(std::ostream& outp) {
 void outputLexEngine(std::ostream& outp, bool no_compress) {
     // clang-format off
     static constexpr std::string_view text0[] = {
-        "int lex(StateData& data, int state) {",
-        "    enum { kDeadFlag = 1, kTrailContFlag = 2, kFlagCount = 2 };",
-        "    if (data.state_stack.empty()) { data.pat_length = 0; }",
+        "int lex(CtxData& ctx, std::vector<int>& state_stack, int state) {",
+        "    enum { kTrailContFlag = 1, kFlagCount = 1 };",
         "",
         "    // Fill buffers till transition is impossible",
         "    char symb = \'\\0\';",
         "    do {",
-        "        if (data.unread_text == data.text.data() + data.text.size()) { return -1; }",
-        "        symb = *data.unread_text;",
+        "        if (ctx.text_unread == ctx.text_boundary) { return -1; }",
+        "        symb = *ctx.text_unread;",
         "        int meta = symb2meta[static_cast<unsigned char>(symb)];",
         "        if (meta < 0) { break; }",
     };
@@ -79,39 +77,39 @@ void outputLexEngine(std::ostream& outp, bool no_compress) {
     };
     static constexpr std::string_view text2[] = {
         "        if (state < 0) { break; }",
-        "        data.text[data.pat_length++] = symb;",
-        "        ++data.unread_text;",
-        "        data.state_stack.push_back(state);",
-        "    } while (symb != 0 && !(accept[state] & kDeadFlag));",
+        "        *ctx.text_last++ = symb;",
+        "        ++ctx.text_unread;",
+        "        state_stack.push_back(state);",
+        "    } while (symb != 0);",
         "",
         "    // Unroll downto last accepting state",
-        "    while (!data.state_stack.empty()) {",
-        "        int n_pat = accept[data.state_stack.back()];",
+        "    while (!state_stack.empty()) {",
+        "        int n_pat = accept[state_stack.back()];",
         "        if (n_pat > 0) {",
         "            bool has_trailling_context = n_pat & kTrailContFlag;",
         "            n_pat >>= kFlagCount;",
         "            if (has_trailling_context) {",
         "                do {",
-        "                    state = data.state_stack.back();",
+        "                    state = state_stack.back();",
         "                    for (int i = lls_idx[state]; i < lls_idx[state + 1]; ++i) {",
         "                        if (lls_list[i] == n_pat) {",
-        "                            data.state_stack.clear();",
+        "                            state_stack.clear();",
         "                            return n_pat;",
         "                        }",
         "                    }",
-        "                    *(--data.unread_text) = data.text[--data.pat_length];",
-        "                    data.state_stack.pop_back();",
-        "                } while (!data.state_stack.empty());",
+        "                    *(--ctx.text_unread) = *(--ctx.text_last);",
+        "                    state_stack.pop_back();",
+        "                } while (!state_stack.empty());",
         "            }",
-        "            data.state_stack.clear();",
+        "            state_stack.clear();",
         "            return n_pat;",
         "        }",
-        "        *(--data.unread_text) = data.text[--data.pat_length];",
-        "        data.state_stack.pop_back();",
+        "        *(--ctx.text_unread) = *(--ctx.text_last);",
+        "        state_stack.pop_back();",
         "    }",
         "",
         "    // Default pattern",
-        "    data.text[data.pat_length++] = *data.unread_text++;",
+        "    *ctx.text_last++ = *ctx.text_unread++;",
         "    return predef_pat_default;",
         "}",
     };
@@ -244,20 +242,12 @@ int main(int argc, char** argv) {
                 outputArray(ofile, "check", check.begin(), check.end());
             }
 
-            enum {
-                kDeadFlag = 1,       // Can't continue from this state
-                kTrailContFlag = 2,  // Accepting state with trailing context
-                kAcceptFlagCount = 2,
-            };
             std::vector<int> accept = dfa_builder.getAccept();
             for (unsigned state = 0; state < accept.size(); ++state) {
                 if (unsigned n_pat = accept[state]; n_pat > 0) {
-                    accept[state] <<= kAcceptFlagCount;
+                    enum { kTrailContFlag = 1, kFlagCount = 1 };
+                    accept[state] <<= kFlagCount;
                     if (dfa_builder.isPatternWithTrailCont(n_pat)) { accept[state] |= kTrailContFlag; }
-                    if (std::all_of(Dtran[state].begin(), Dtran[state].begin() + dfa_builder.getMetaCount(),
-                                    [](int new_state) { return new_state < 0; })) {
-                        accept[state] |= kDeadFlag;
-                    }
                 }
             }
 
