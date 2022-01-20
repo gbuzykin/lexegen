@@ -22,41 +22,37 @@ static int goto_list[20] = {
     -1, 0, 4, 9, 11, 14, 12, 13, -1, 1, -1, 2, 2, 30, -1, 3, -1, 21, -1, 19
 };
 
-std::pair<bool, int> parse(CtxData& ctx, std::vector<int>& state_stack, int tt) {
+int parse(int tt, std::vector<int>& state_stack, unsigned& rlen, int rise_error) {
     enum { kShiftFlag = 1, kFlagCount = 1 };
-    int action = -1;
-    if (!ctx.rise_error) {
+    int action = rise_error;
+    if (action >= 0) {
         const int* action_tbl = &action_list[action_idx[state_stack.back()]];
         while (action_tbl[0] >= 0 && action_tbl[0] != tt) { action_tbl += 2; }
         action = action_tbl[1];
     }
-    ctx.reduce_length = 0;
-    ctx.rise_error = false;
-    if (action < 0) {  // Roll back to the state accepting error
-        ctx.can_recover = false;
+    if (action < 0) {  // Roll back to state, which can accept error
+        rlen = 0;
         do {
             const int* action_tbl = &action_list[action_idx[state_stack.back()]];
             while (action_tbl[0] >= 0 && action_tbl[0] != predef_tt_error) { action_tbl += 2; }
-            int err_action = action_tbl[1];
-            if (err_action >= 0 && (err_action & kShiftFlag)) {  // Shift error token
-                state_stack.push_back(err_action >> kFlagCount);
-                ctx.can_recover = true;  // Can recover
+            if (action_tbl[1] >= 0 && (action_tbl[1] & kShiftFlag)) {  // Can recover
+                state_stack.push_back(action_tbl[1] >> kFlagCount);    // Shift error token
                 break;
             }
-            ++ctx.reduce_length;
             state_stack.pop_back();
+            ++rlen;
         } while (!state_stack.empty());
-        return {true, action};
+        return action;
     } else if (action & kShiftFlag) {
         state_stack.push_back(action >> kFlagCount);
-        return {false, 1};
+        return predef_act_shift;
     }
     const int* info = &reduce_info[action >> kFlagCount];
-    ctx.reduce_length = info[0];
-    state_stack.erase(state_stack.end() - info[0], state_stack.end());
+    rlen = static_cast<unsigned>(info[0]);
+    state_stack.erase(state_stack.end() - rlen, state_stack.end());
     int state = state_stack.back();
     const int* goto_tbl = &goto_list[info[1]];
     while (goto_tbl[0] >= 0 && goto_tbl[0] != state) { goto_tbl += 2; }
     state_stack.push_back(goto_tbl[1]);
-    return {true, info[2]};
+    return predef_act_reduce + info[2];
 }

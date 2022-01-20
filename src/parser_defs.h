@@ -14,10 +14,13 @@ enum {
     tt_sep,
     tt_sc_list_begin,
     tt_unterm_token,
+    total_token_count,
 };
 
 enum {
-    act_trail_cont = 1,
+    predef_act_shift = 0,
+    predef_act_reduce = 1,
+    act_trail_cont,
     act_or,
     act_cat,
     act_star,
@@ -27,14 +30,11 @@ enum {
     act_same_num,
     act_mult_finite,
     act_mult_infinite,
+    total_action_count,
 };
 
 enum {
     sc_initial = 0,
 };
 
-struct CtxData {
-    unsigned reduce_length = 0;
-    bool can_recover = false;
-    bool rise_error = false;
-};
+int parse(int tt, std::vector<int>& state_stack, unsigned& rlen, int rise_error);

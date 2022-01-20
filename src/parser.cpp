@@ -150,7 +150,6 @@ bool Parser::parse() {
 
 std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
     unsigned num[2] = {0, 0}, num_given = 0;
-    parser_detail::CtxData parser_ctx;
     std::vector<std::unique_ptr<Node>> node_stack;
     std::vector<int> parser_state_stack;
 
@@ -159,13 +158,13 @@ std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
 
     parser_state_stack.push_back(parser_detail::sc_initial);  // Push initial state
     while (true) {
-        auto [reduce, code] = parser_detail::parse(parser_ctx, parser_state_stack, tt);
-        if (reduce) {
-            if (code < 0) {
-                logSyntaxError(tt);
-                return {nullptr, tt};
-            }
-            switch (code) {
+        unsigned rlen = 0;
+        int act = parser_detail::parse(tt, parser_state_stack, rlen, 0);
+        if (act < 0) {
+            logSyntaxError(tt);
+            return {nullptr, tt};
+        } else if (act != parser_detail::predef_act_shift) {
+            switch (act) {
                 case parser_detail::act_trail_cont: {  // Trailing context
                     auto trail_cont_node = std::make_unique<TrailContNode>();
                     trail_cont_node->setRight(std::move(node_stack.back()));
@@ -229,7 +228,7 @@ std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
                     }
                     // Optional part
                     std::unique_ptr<Node> right_subtree;
-                    if (code == parser_detail::act_mult_infinite) {  // Infinite multiplication
+                    if (act == parser_detail::act_mult_infinite) {  // Infinite multiplication
                         right_subtree = std::make_unique<Node>(NodeType::kStar);
                         right_subtree->setLeft(num[0] > 0 ? child->clone() : std::move(node_stack.back()));
                         assert(right_subtree->getLeft());
