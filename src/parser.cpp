@@ -13,10 +13,19 @@ namespace parser_detail {
 #include "parser_analyzer.inl"
 }
 
+namespace {
+char* findEol(char* unread, char* boundary) {
+    return std::find_if(unread, boundary, [](char ch) { return ch == '\n' || ch == '\0'; });
+}
+std::string_view getNextLine(char* unread, char* boundary) {
+    return std::string_view(unread, findEol(unread, boundary) - unread);
+}
+}  // namespace
+
 Parser::Parser(std::istream& input, std::string file_name)
     : input_(input), file_name_(std::move(file_name)), sc_stack_({lex_detail::sc_initial}) {}
 
-int Parser::parse() {
+bool Parser::parse() {
     size_t file_sz = static_cast<size_t>(input_.seekg(0, std::ios_base::end).tellg());
     text_ = std::make_unique<char[]>(file_sz + 1);
 
@@ -26,8 +35,7 @@ int Parser::parse() {
     text_[input_.gcount()] = '\0';
     lex_ctx_.text_last = lex_ctx_.text_unread = text_.get();
     lex_ctx_.text_boundary = text_.get() + input_.gcount() + 1;
-    current_line_.assign(lex_ctx_.text_unread, std::find_if(lex_ctx_.text_unread, lex_ctx_.text_boundary,
-                                                            [](char ch) { return ch == '\n' || ch == '\0'; }));
+    current_line_ = getNextLine(lex_ctx_.text_unread, lex_ctx_.text_boundary);
 
     int tt = 0;
 
@@ -36,17 +44,22 @@ int Parser::parse() {
     do {
         switch (tt = lex()) {
             case parser_detail::tt_start: {  // Start condition definition
-                if ((tt = lex()) != parser_detail::tt_id) { return logSyntaxError(tt); }
+                if ((tt = lex()) != parser_detail::tt_id) {
+                    logSyntaxError(tt);
+                    return false;
+                }
                 if (std::find(start_conditions_.begin(), start_conditions_.end(),
                               std::get<std::string_view>(tkn_.val)) != start_conditions_.end()) {
-                    return logError() << "start condition is already defined";
+                    logger::error(*this, tkn_.loc) << "start condition is already defined";
+                    return false;
                 }
                 start_conditions_.emplace_back(std::get<std::string_view>(tkn_.val));
             } break;
             case parser_detail::tt_id: {  // Regular definition
                 std::string_view name = std::get<std::string_view>(tkn_.val);
                 if (definitions_.find(name) != definitions_.end()) {
-                    return logError() << "regular expression is already defined";
+                    logger::error(*this, tkn_.loc) << "regular expression is already defined";
+                    return false;
                 }
 
                 sc_stack_.push_back(lex_detail::sc_regex);
@@ -54,17 +67,23 @@ int Parser::parse() {
                 std::tie(syn_tree, tt) = parseRegex(lex());
                 sc_stack_.pop_back();
 
-                if (tt < 0) { return tt; }
+                if (!syn_tree) { return false; }
                 definitions_.emplace(name, std::move(syn_tree));
             } break;
             case parser_detail::tt_option: {  // Option
-                if ((tt = lex()) != parser_detail::tt_id) { return logSyntaxError(tt); }
+                if ((tt = lex()) != parser_detail::tt_id) {
+                    logSyntaxError(tt);
+                    return false;
+                }
                 std::string_view name = std::get<std::string_view>(tkn_.val);
-                if ((tt = lex()) != parser_detail::tt_string) { return logSyntaxError(tt); }
+                if ((tt = lex()) != parser_detail::tt_string) {
+                    logSyntaxError(tt);
+                    return false;
+                }
                 options_.emplace(name, std::get<std::string_view>(tkn_.val));
             } break;
             case parser_detail::tt_sep: break;
-            default: return logSyntaxError(tt);
+            default: logSyntaxError(tt); return false;
         }
     } while (tt != parser_detail::tt_sep);
 
@@ -74,7 +93,8 @@ int Parser::parse() {
             std::string_view name = std::get<std::string_view>(tkn_.val);
             if (std::find_if(patterns_.begin(), patterns_.end(), [&](const auto& pat) { return pat.id == name; }) !=
                 patterns_.end()) {
-                return logError() << "pattern is already defined";
+                logger::error(*this, tkn_.loc) << "pattern is already defined";
+                return false;
             }
 
             ValueSet sc;
@@ -87,12 +107,16 @@ int Parser::parse() {
                     if ((tt = lex()) == parser_detail::tt_id) {
                         auto sc_it = std::find(start_conditions_.begin(), start_conditions_.end(),
                                                std::get<std::string_view>(tkn_.val));
-                        if (sc_it == start_conditions_.end()) { return logError() << "undefined start condition"; }
+                        if (sc_it == start_conditions_.end()) {
+                            logger::error(*this, tkn_.loc) << "undefined start condition";
+                            return false;
+                        }
                         sc.addValue(static_cast<unsigned>(sc_it - start_conditions_.begin()));
                     } else if (tt == '>') {
                         break;
                     } else {
-                        return logSyntaxError(tt);
+                        logSyntaxError(tt);
+                        return false;
                     }
                 }
                 sc_stack_.pop_back();
@@ -108,18 +132,19 @@ int Parser::parse() {
             std::tie(syn_tree, tt) = parseRegex(tt);
             sc_stack_.pop_back();
 
-            if (tt < 0) { return tt; }
+            if (!syn_tree) { return false; }
             patterns_.emplace_back(Pattern{name, sc, std::move(syn_tree)});
         } else if (tt != parser_detail::tt_sep) {
-            return logSyntaxError(tt);
+            logSyntaxError(tt);
+            return false;
         }
     } while (tt != parser_detail::tt_sep);
 
     if (patterns_.empty()) {
-        Log(Log::MsgType::kError, this) << "no patterns defined";
-        return -1;
+        logger::error(getFileName()) << "no patterns defined";
+        return false;
     }
-    return 0;
+    return true;
 }
 
 std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
@@ -132,7 +157,10 @@ std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
     while (true) {
         auto [reduce, code] = parser_detail::parse(parser_ctx, parser_state_stack, tt);
         if (reduce) {
-            if (code < 0) { return {nullptr, logSyntaxError(tt)}; }
+            if (code < 0) {
+                logSyntaxError(tt);
+                return {nullptr, tt};
+            }
             switch (code) {
                 case parser_detail::act_trail_cont: {  // Trailing context
                     auto trail_cont_node = std::make_unique<TrailContNode>();
@@ -239,7 +267,8 @@ std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
                 case parser_detail::tt_id: {  // Insert subtree
                     auto pat_it = definitions_.find(std::get<std::string_view>(tkn_.val));
                     if (pat_it == definitions_.end()) {
-                        return {nullptr, logError() << "undefined regular expression"};
+                        logger::error(*this, tkn_.loc) << "undefined regular expression";
+                        return {nullptr, tt};
                     }
                     node_stack.emplace_back(pat_it->second->cloneTree());
                 } break;
@@ -276,19 +305,19 @@ int Parser::lex() {
     bool sset_is_inverted = false, sset_range_flag = false;
     unsigned sset_last = 0;
     const char* str_start = nullptr;
-    tkn_.loc = loc_;
+    tkn_.loc = {n_line_, n_col_, n_col_};
 
     while (true) {
         if (lex_ctx_.text_last > text_.get() && *(lex_ctx_.text_last - 1) == '\n') {
-            current_line_.assign(lex_ctx_.text_unread, std::find_if(lex_ctx_.text_unread, lex_ctx_.text_boundary,
-                                                                    [](char ch) { return ch == '\n' || ch == '\0'; }));
-            ++loc_.n_line, loc_.n_col = 1;
-            tkn_.loc = loc_;
+            current_line_ = getNextLine(lex_ctx_.text_unread, lex_ctx_.text_boundary);
+            ++n_line_, n_col_ = 1;
+            tkn_.loc = {n_line_, n_col_, n_col_};
         }
         char* lexeme = lex_ctx_.text_last;
         int pat = lex_detail::lex(lex_ctx_, lex_state_stack_, sc_stack_.back());
         unsigned lexeme_len = static_cast<unsigned>(lex_ctx_.text_last - lexeme);
-        loc_.n_col += lexeme_len;
+        n_col_ += lexeme_len;
+        tkn_.loc.col_last = n_col_ - 1;
 
         std::optional<char> escape;
         switch (pat) {
@@ -397,8 +426,7 @@ int Parser::lex() {
 
             // ------ comment
             case lex_detail::pat_comment: {  // Eat up comment
-                lex_ctx_.text_unread = std::find_if(lex_ctx_.text_unread, lex_ctx_.text_boundary,
-                                                    [](char ch) { return ch == '\n' || ch == '\0'; });
+                lex_ctx_.text_unread = findEol(lex_ctx_.text_unread, lex_ctx_.text_boundary);
             } break;
 
             // ------ other
@@ -409,7 +437,7 @@ int Parser::lex() {
             case lex_detail::pat_sep: return parser_detail::tt_sep;
             case lex_detail::pat_other: return static_cast<unsigned char>(*lexeme);
             case lex_detail::pat_eof: return parser_detail::tt_eof;
-            case lex_detail::pat_whitespace: tkn_.loc.n_col = loc_.n_col; break;
+            case lex_detail::pat_whitespace: tkn_.loc.col_first = n_col_; break;
             case lex_detail::pat_nl: break;
             case lex_detail::pat_unterminated_token: return parser_detail::tt_unterm_token;
             default: return -1;
@@ -441,7 +469,7 @@ int Parser::lex() {
     return parser_detail::tt_eof;
 }
 
-int Parser::logSyntaxError(int tt) const {
+void Parser::logSyntaxError(int tt) const {
     std::string_view msg;
     switch (tt) {
         case parser_detail::tt_eof: msg = "unexpected end of file"; break;
@@ -449,45 +477,5 @@ int Parser::logSyntaxError(int tt) const {
         case parser_detail::tt_unterm_token: msg = "unterminated token"; break;
         default: msg = "unexpected token"; break;
     }
-    return logError() << msg;
-}
-
-void Log::printMessage(MsgType type, const TokenLoc& l, const std::string& msg) {
-    std::string msg_hdr(parser_ ? parser_->getFileName() : "lexegen");
-    std::string n_line = std::to_string(l.n_line);
-    if (l.n_line > 0 && l.n_col > 0) { msg_hdr += ':' + n_line + ':' + std::to_string(l.n_col); }
-
-    switch (type) {
-        case Log::MsgType::kDebug: msg_hdr += ": debug: "; break;
-        case Log::MsgType::kInfo: msg_hdr += ": info: "; break;
-        case Log::MsgType::kWarning: msg_hdr += ": warning: "; break;
-        case Log::MsgType::kError: msg_hdr += ": error: "; break;
-        case Log::MsgType::kFatal: msg_hdr += ": fatal error: "; break;
-    }
-
-    std::cerr << msg_hdr << msg << std::endl;
-    if (!parser_ || l.n_line == 0 || l.n_col == 0) { return; }
-
-    const auto& line = parser_->getCurrentLine();
-    if (line.empty()) { return; }
-
-    uint32_t code = 0;
-    const unsigned tab_size = 4;
-    unsigned col = 0, pos_col = 0;
-    std::string tab2space_line;
-    tab2space_line.reserve(line.size());
-    for (auto p = line.begin(), p1 = p; (p1 = detail::from_utf8(p, line.end(), &code)) > p; p = p1) {
-        if (code == '\t') {
-            auto align_up = [](unsigned v, unsigned base) { return (v + base - 1) & ~(base - 1); };
-            unsigned tab_pos = align_up(col + 1, tab_size);
-            while (col < tab_pos) { tab2space_line.push_back(' '), ++col; }
-        } else {
-            while (p < p1) { tab2space_line.push_back(*p++); }
-            ++col;
-        }
-        if (p - line.begin() < l.n_col) { pos_col = col; }
-    }
-
-    std::cerr << " " << n_line << " | " << tab2space_line << std::endl;
-    std::cerr << std::string(n_line.size() + 1, ' ') << " | " << std::string(pos_col, ' ') << "^" << std::endl;
+    logger::error(*this, tkn_.loc) << msg;
 }

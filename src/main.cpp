@@ -164,25 +164,24 @@ int main(int argc, char** argv) {
             } else if (arg[0] != '-') {
                 input_file_name = argv[i];
             } else {
-                Log(Log::MsgType::kFatal) << "unknown flag \'" << arg << "\'";
+                logger::fatal() << "unknown flag \'" << arg << "\'";
                 return -1;
             }
         }
 
         if (input_file_name.empty()) {
-            Log(Log::MsgType::kFatal) << "no input file specified";
+            logger::fatal() << "no input file specified";
             return -1;
         }
 
         std::ifstream ifile(input_file_name);
         if (!ifile) {
-            Log(Log::MsgType::kFatal) << "can\'t open input file \'" << input_file_name << "\'";
+            logger::fatal() << "can\'t open input file \'" << input_file_name << "\'";
             return -1;
         }
 
         Parser parser(ifile, input_file_name);
-        int ret = parser.parse();
-        if (ret != 0) { return ret; }
+        if (!parser.parse()) { return -1; }
 
         const auto& patterns = parser.getPatterns();
         const auto& start_conditions = parser.getStartConditions();
@@ -213,7 +212,7 @@ int main(int argc, char** argv) {
             }
             outputLexDefs(ofile);
         } else {
-            Log(Log::MsgType::kError) << "can\'t open output file \'" << defs_file_name << "\'";
+            logger::error() << "can\'t open output file \'" << defs_file_name << "\'";
         }
 
         if (std::ofstream ofile(analyzer_file_name); ofile) {
@@ -263,10 +262,10 @@ int main(int argc, char** argv) {
             outputArray(ofile, "lls_list", lls_list.begin(), lls_list.end());
             outputLexEngine(ofile, no_compress);
         } else {
-            Log(Log::MsgType::kError) << "can\'t open output file \'" << analyzer_file_name << "\'";
+            logger::error() << "can\'t open output file \'" << analyzer_file_name << "\'";
         }
 
         return 0;
-    } catch (const std::exception& e) { Log(Log::MsgType::kFatal) << "exception catched: " << e.what(); }
+    } catch (const std::exception& e) { logger::fatal() << "exception catched: " << e.what(); }
     return -1;
 }
