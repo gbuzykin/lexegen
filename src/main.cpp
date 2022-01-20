@@ -44,6 +44,7 @@ void outputLexDefs(std::ostream& outp, bool inplace) {
         "};",
         "struct InCtxData {",
         "    const char* next = nullptr;",
+        "    const char* last = nullptr;",
         "    const char* boundary = nullptr;",
         "};",
     };
@@ -52,6 +53,7 @@ void outputLexDefs(std::ostream& outp, bool inplace) {
         "    char* out_first = nullptr;",
         "    char* out_last = nullptr;",
         "    char* in_next = nullptr;",
+        "    char* in_last = nullptr;",
         "    char* in_boundary = nullptr;",
         "};",
     };
@@ -69,12 +71,13 @@ void outputLexEngine(std::ostream& outp, bool inplace, bool no_compress) {
     static constexpr std::string_view text0[] = {
         "int lex(OutCtxData& out_ctx, InCtxData& in_ctx, std::vector<int>& state_stack) {",
         "    enum { kTrailContFlag = 1, kFlagCount = 1 };",
-        "",
-        "    // Fill buffers till transition is impossible",
         "    char symb = \'\\0\';",
         "    int state = state_stack.back();",
-        "    do {",
-        "        if (in_ctx.next == in_ctx.boundary) { return -1; }",
+        "    do {  // Fill buffers till transition is impossible",
+        "        if (in_ctx.next == in_ctx.boundary) {",
+        "            if (in_ctx.next == in_ctx.last) { break; }",
+        "            return err_end_of_input;",
+        "        }",
         "        symb = *in_ctx.next;",
         "        int meta = symb2meta[static_cast<unsigned char>(symb)];",
         "        if (meta < 0) { break; }",
@@ -82,12 +85,13 @@ void outputLexEngine(std::ostream& outp, bool inplace, bool no_compress) {
     static constexpr std::string_view text0_inplace[] = {
         "int lex(CtxData& ctx, std::vector<int>& state_stack) {",
         "    enum { kTrailContFlag = 1, kFlagCount = 1 };",
-        "",
-        "    // Fill buffers till transition is impossible",
         "    char symb = \'\\0\';",
         "    int state = state_stack.back();",
-        "    do {",
-        "        if (ctx.in_next == ctx.in_boundary) { return -1; }",
+        "    do {  // Fill buffers till transition is impossible",
+        "        if (ctx.in_next == ctx.in_boundary) {",
+        "            if (ctx.in_next == ctx.in_last) { break; }",
+        "            return err_end_of_input;",
+        "        }",
         "        symb = *ctx.in_next;",
         "        int meta = symb2meta[static_cast<unsigned char>(symb)];",
         "        if (meta < 0) { break; }",
@@ -107,13 +111,11 @@ void outputLexEngine(std::ostream& outp, bool inplace, bool no_compress) {
     };
     static constexpr std::string_view text2[] = {
         "        if (state < 0) { break; }",
-        "        if (out_ctx.last == out_ctx.boundary) { return -1; }",
+        "        if (out_ctx.last == out_ctx.boundary) { return err_end_of_output; }",
         "        ++in_ctx.next, *out_ctx.last++ = symb;",
         "        state_stack.push_back(state);",
         "    } while (symb != 0);",
-        "",
-        "    // Unroll downto last accepting state",
-        "    while (out_ctx.last != out_ctx.first) {",
+        "    while (out_ctx.last != out_ctx.first) {  // Unroll downto last accepting state",
         "        int n_pat = accept[state_stack.back()];",
         "        if (n_pat > 0) {",
         "            bool has_trailling_context = n_pat & kTrailContFlag;",
@@ -139,10 +141,9 @@ void outputLexEngine(std::ostream& outp, bool inplace, bool no_compress) {
         "        --in_ctx.next, --out_ctx.last;",
         "        state_stack.pop_back();",
         "    }",
-        "",
-        "    // Default pattern",
-        "    if (out_ctx.last == out_ctx.boundary) { return -1; }",
-        "    *out_ctx.last++ = *in_ctx.next++;",
+        "    if (out_ctx.last == out_ctx.boundary) { return err_end_of_output; }",
+        "    if (in_ctx.next == in_ctx.last) { return err_end_of_input; }",
+        "    *out_ctx.last++ = *in_ctx.next++;  // Accept at least one symbol as default pattern",
         "    return predef_pat_default;",
         "}",
     };
@@ -151,9 +152,7 @@ void outputLexEngine(std::ostream& outp, bool inplace, bool no_compress) {
         "        ++ctx.in_next, *ctx.out_last++ = symb;",
         "        state_stack.push_back(state);",
         "    } while (symb != 0);",
-        "",
-        "    // Unroll downto last accepting state",
-        "    while (ctx.out_last != ctx.out_first) {",
+        "    while (ctx.out_last != ctx.out_first) {  // Unroll downto last accepting state",
         "        int n_pat = accept[state_stack.back()];",
         "        if (n_pat > 0) {",
         "            bool has_trailling_context = n_pat & kTrailContFlag;",
@@ -179,9 +178,8 @@ void outputLexEngine(std::ostream& outp, bool inplace, bool no_compress) {
         "        *(--ctx.in_next) = *(--ctx.out_last);",
         "        state_stack.pop_back();",
         "    }",
-        "",
-        "    // Default pattern",
-        "    *ctx.out_last++ = *ctx.in_next++;",
+        "    if (ctx.in_next == ctx.in_last) { return err_end_of_input; }",
+        "    *ctx.out_last++ = *ctx.in_next++;  // Accept at least one symbol as default pattern",
         "    return predef_pat_default;",
         "}",
     };
@@ -283,6 +281,8 @@ int main(int argc, char** argv) {
         if (std::ofstream ofile(defs_file_name); ofile) {
             ofile << "// Lexegen autogenerated definition file - do not edit!" << std::endl;
             ofile << std::endl << "enum {" << std::endl;
+            ofile << "    err_end_of_input = -1," << std::endl;
+            ofile << "    err_end_of_output = -2," << std::endl;
             ofile << "    predef_pat_default = 0," << std::endl;
             for (size_t i = 0; i < patterns.size(); ++i) { ofile << "    pat_" << patterns[i].id << "," << std::endl; }
             ofile << "};" << std::endl;

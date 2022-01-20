@@ -46,8 +46,6 @@ regex_nl         <regex sc_list regex_br> \n
 regex_br_close   <regex_br> }
 regex_symb       <regex sc_list> [^"|/*+?()]
 
-unterminated_token   <string sset> \n | <<EOF>>
-
 start    <initial> "%start"
 option   <initial> "%option"
 sep      <initial> "%%"
@@ -58,6 +56,5 @@ comment  <initial> #
 string     \"
 other      .
 nl         \n
-eof        <<EOF>>
 
 %%

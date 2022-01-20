@@ -27,13 +27,13 @@ Parser::Parser(std::istream& input, std::string file_name)
 
 bool Parser::parse() {
     size_t file_sz = static_cast<size_t>(input_.seekg(0, std::ios_base::end).tellg());
-    text_ = std::make_unique<char[]>(file_sz + 1);
+    text_ = std::make_unique<char[]>(file_sz);
 
     // Read the whole file
     input_.seekg(0);
     input_.read(text_.get(), file_sz);
-    text_[input_.gcount()] = '\0';
-    lex_ctx_ = lex_detail::CtxData{text_.get(), text_.get(), text_.get(), text_.get() + input_.gcount() + 1};
+    lex_ctx_.out_first = lex_ctx_.out_last = lex_ctx_.in_next = text_.get();
+    lex_ctx_.in_last = lex_ctx_.in_boundary = text_.get() + input_.gcount();
     current_line_ = getNextLine(lex_ctx_.in_next, lex_ctx_.in_boundary);
 
     int tt = 0;
@@ -314,6 +314,12 @@ int Parser::lex() {
         }
         lex_ctx_.out_first = lex_ctx_.out_last;
         int pat = lex_detail::lex(lex_ctx_, lex_state_stack_);
+        if (pat == lex_detail::err_end_of_input) {
+            int sc = lex_state_stack_.back();
+            tkn_.loc.col_last = tkn_.loc.col_first;
+            if (sc == lex_detail::sc_string || sc == lex_detail::sc_sset) { return parser_detail::tt_unterm_token; }
+            return parser_detail::tt_eof;
+        }
         unsigned lexeme_len = static_cast<unsigned>(lex_ctx_.out_last - lex_ctx_.out_first);
         n_col_ += lexeme_len;
         tkn_.loc.col_last = n_col_ - 1;
@@ -435,10 +441,11 @@ int Parser::lex() {
             case lex_detail::pat_option: return parser_detail::tt_option;
             case lex_detail::pat_sep: return parser_detail::tt_sep;
             case lex_detail::pat_other: return static_cast<unsigned char>(*lex_ctx_.out_first);
-            case lex_detail::pat_eof: return parser_detail::tt_eof;
             case lex_detail::pat_whitespace: tkn_.loc.col_first = n_col_; break;
-            case lex_detail::pat_nl: break;
-            case lex_detail::pat_unterminated_token: return parser_detail::tt_unterm_token;
+            case lex_detail::pat_nl: {
+                int sc = lex_state_stack_.back();
+                if (sc == lex_detail::sc_string || sc == lex_detail::sc_sset) { return parser_detail::tt_unterm_token; }
+            } break;
             default: return -1;
         }
 
