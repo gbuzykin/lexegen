@@ -2,7 +2,6 @@
 
 enum {
     err_end_of_input = -1,
-    err_end_of_output = -2,
     predef_pat_default = 0,
     pat_sc_list_begin,
     pat_escape_oct,
@@ -20,11 +19,11 @@ enum {
     pat_regex_sset_seq,
     pat_regex_sset_range,
     pat_regex_sset_close,
+    pat_unterm_token,
     pat_whitespace,
     pat_regex_sset,
     pat_regex_sset_inv,
     pat_regex_dot,
-    pat_regex_eof_symb,
     pat_regex_id,
     pat_regex_br,
     pat_regex_nl,
@@ -36,9 +35,9 @@ enum {
     pat_id,
     pat_num,
     pat_comment,
+    pat_nl,
     pat_string,
     pat_other,
-    pat_nl,
 };
 
 enum {
@@ -50,10 +49,9 @@ enum {
     sc_sc_list,
 };
 
-struct CtxData {
-    char* out_first = nullptr;
-    char* out_last = nullptr;
-    char* in_next = nullptr;
-    char* in_last = nullptr;
-    char* in_boundary = nullptr;
+struct InCtxData {
+    const char* first = nullptr;
+    const char* next = nullptr;
+    const char* last = nullptr;
+    const char* boundary = nullptr;
 };

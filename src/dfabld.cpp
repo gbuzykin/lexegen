@@ -234,21 +234,25 @@ void DfaBuilder::optimize() {
 
     std::cout << " - state group count: " << group_count << std::endl;
 
-    auto is_dead_group = [&state_group, &group_main_state, &Dtran = Dtran_, &accept = accept_](unsigned group) {
+    auto is_dead_group = [&state_group, &group_main_state, meta_count = meta_count_, &Dtran = Dtran_,
+                          &accept = accept_](unsigned group) {
         std::vector<bool> is_visited(group_main_state.size(), false);
         std::vector<unsigned> group_stack;
         group_stack.reserve(group_main_state.size());
         group_stack.push_back(group);
+        is_visited[group] = true;
         do {
             group = group_stack.back();
             group_stack.pop_back();
-            is_visited[group] = true;
-            for (int next : Dtran[group_main_state[group]]) {  // Add adjucent groups
+            const auto& T = Dtran[group_main_state[group]];
+            for (unsigned meta = 0; meta < meta_count; ++meta) {  // Add adjucent groups
+                int next = T[meta];
                 if (next < 0) { continue; }
                 if (accept[next] > 0) { return false; }  // Can lead to accepting state
                 unsigned next_group = state_group[next];
-                if (!is_visited[next_group] && group_main_state[next_group] == next) {
+                if (!is_visited[next_group]) {
                     group_stack.push_back(next_group);
+                    is_visited[next_group] = true;
                 }
             }
         } while (!group_stack.empty());

@@ -51,7 +51,8 @@ class Parser {
     std::unique_ptr<char[]> text_;
     std::string current_line_;
     unsigned n_line_ = 1, n_col_ = 1;
-    lex_detail::CtxData lex_ctx_;
+    char* text_top_ = nullptr;
+    lex_detail::InCtxData lex_ctx_;
     std::vector<int> lex_state_stack_;
     TokenInfo tkn_;
     std::unordered_map<std::string_view, std::string_view> options_;

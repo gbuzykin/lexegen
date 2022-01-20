@@ -10,7 +10,7 @@ hdig    [0-9a-fA-F]
 letter  [a-zA-Z]
 num     {dig}+
 id      ({letter}|_)({letter}|{dig}|_)*
-ws      [ \t]+
+ws      [ \f\r\t\v]
 
 %%
 
@@ -27,19 +27,20 @@ escape_t      <string regex sset sc_list> \\t
 escape_v      <string regex sset sc_list> \\v
 escape_other  <string regex sset sc_list> \\.
 
-string_seq    <string> [^\n\\"]+
+string_seq    <string> [^"\\\n]+
 string_close  <string> \"
 
-regex_sset_seq      <sset> [^\n\\\]\-]+
+regex_sset_seq      <sset> [^\]\-\\\n]+
 regex_sset_range    <sset> -
 regex_sset_close    <sset> ]
 
-whitespace    {ws}
+unterm_token  <string sset> \n
+
+whitespace    {ws}+
 
 regex_sset       <regex sc_list> \[
 regex_sset_inv   <regex sc_list> \[^
 regex_dot        <regex sc_list> \.
-regex_eof_symb   <regex sc_list> "<<EOF>>"
 regex_id         <regex sc_list> \{{id}}
 regex_br         <regex sc_list> \{
 regex_nl         <regex sc_list regex_br> \n
@@ -53,8 +54,8 @@ id       <initial> {id}
 num      <initial regex_br> {num}
 comment  <initial> #
 
+nl         \n
 string     \"
 other      .
-nl         \n
 
 %%
