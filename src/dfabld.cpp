@@ -13,7 +13,7 @@ void DfaBuilder::addPattern(std::unique_ptr<Node> syn_tree, unsigned n_pat, cons
     auto cat_node = std::make_unique<Node>(NodeType::kCat);
     cat_node->setRight(std::make_unique<TermNode>(n_pat));  // Add $end node
     cat_node->setLeft(std::move(syn_tree));
-    patterns_.emplace_back(Pattern{sc, std::move(cat_node)});
+    patterns_.emplace_back(sc, std::move(cat_node));
 }
 
 bool DfaBuilder::isPatternWithTrailCont(unsigned n_pat) const {
@@ -31,6 +31,7 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
     sc_count_ = sc_count;
 
     // Scatter positions and calculate node functions
+    positions.reserve(1024);
     for (const auto& pat : patterns_) { pat.syn_tree->calcFunctions(positions); }
 
     std::cout << " - pattern count: " << patterns_.size() << std::endl;
@@ -129,7 +130,7 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
         } else if (unsigned equiv = get_equiv_symb(symb); equiv < symb) {
             symb2meta_[symb] = symb2meta_[equiv];
         } else {
-            symb2meta_[symb] = static_cast<int>(meta_count_++);
+            symb2meta_[symb] = meta_count_++;
         }
     }
 

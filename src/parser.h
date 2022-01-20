@@ -23,6 +23,8 @@ class Node;
 class Parser {
  public:
     struct Pattern {
+        Pattern(std::string_view in_id, const ValueSet& in_sc, std::unique_ptr<Node> in_syn_tree)
+            : id(in_id), sc(in_sc), syn_tree(std::move(in_syn_tree)) {}
         std::string_view id;
         ValueSet sc;
         std::unique_ptr<Node> syn_tree;
@@ -33,13 +35,15 @@ class Parser {
     const std::string& getFileName() const { return file_name_; }
     const std::string& getCurrentLine() const { return current_line_; }
     const std::vector<Pattern>& getPatterns() const { return patterns_; }
-    const std::vector<std::string>& getStartConditions() const { return start_conditions_; }
+    const std::vector<std::string_view>& getStartConditions() const { return start_conditions_; }
     std::unique_ptr<Node> extractPatternTree(size_t n) { return std::move(patterns_[n].syn_tree); }
 
  private:
+    using TokenVal = std::variant<unsigned, std::string_view, ValueSet>;
+
     struct TokenInfo {
+        TokenVal val;
         TokenLoc loc;
-        std::variant<unsigned, std::string_view, ValueSet> val;
     };
 
     std::istream& input_;
@@ -52,7 +56,7 @@ class Parser {
     TokenInfo tkn_;
     std::unordered_map<std::string_view, std::string_view> options_;
     std::unordered_map<std::string_view, std::unique_ptr<Node>> definitions_;
-    std::vector<std::string> start_conditions_;
+    std::vector<std::string_view> start_conditions_;
     std::vector<Pattern> patterns_;
 
     std::pair<std::unique_ptr<Node>, int> parseRegex(int tt);

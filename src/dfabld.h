@@ -32,6 +32,8 @@ class DfaBuilder {
 
  protected:
     struct Pattern {
+        Pattern(const ValueSet& in_sc, std::unique_ptr<Node> in_syn_tree)
+            : sc(in_sc), syn_tree(std::move(in_syn_tree)) {}
         ValueSet sc;
         std::unique_ptr<Node> syn_tree;
     };

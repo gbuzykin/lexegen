@@ -14,11 +14,11 @@ namespace parser_detail {
 }
 
 namespace {
-char* findEol(char* unread, char* boundary) {
-    return std::find_if(unread, boundary, [](char ch) { return ch == '\n' || ch == '\0'; });
+char* findEol(char* text, char* boundary) {
+    return std::find_if(text, boundary, [](char ch) { return ch == '\n' || ch == '\0'; });
 }
-std::string_view getNextLine(char* unread, char* boundary) {
-    return std::string_view(unread, findEol(unread, boundary) - unread);
+std::string_view getNextLine(char* text, char* boundary) {
+    return std::string_view(text, findEol(text, boundary) - text);
 }
 }  // namespace
 
@@ -132,7 +132,7 @@ bool Parser::parse() {
             lex_state_stack_.pop_back();
 
             if (!syn_tree) { return false; }
-            patterns_.emplace_back(Pattern{name, sc, std::move(syn_tree)});
+            patterns_.emplace_back(name, sc, std::move(syn_tree));
         } else if (tt != parser_detail::tt_sep) {
             logSyntaxError(tt);
             return false;

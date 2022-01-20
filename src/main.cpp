@@ -246,9 +246,9 @@ int main(int argc, char** argv) {
                 for (const char* l : text) { std::cout << l << std::endl; }
                 return 0;
             } else if (arg[0] != '-') {
-                input_file_name = argv[i];
+                input_file_name = arg;
             } else {
-                logger::fatal() << "unknown flag \'" << arg << "\'";
+                logger::fatal() << "unknown flag `" << arg << "`";
                 return -1;
             }
         }
@@ -260,7 +260,7 @@ int main(int argc, char** argv) {
 
         std::ifstream ifile(input_file_name);
         if (!ifile) {
-            logger::fatal() << "can\'t open input file \'" << input_file_name << "\'";
+            logger::fatal() << "could not open input file `" << input_file_name << "`";
             return -1;
         }
 
@@ -296,7 +296,7 @@ int main(int argc, char** argv) {
             }
             outputLexDefs(ofile, inplace_analyzer);
         } else {
-            logger::error() << "can\'t open output file \'" << defs_file_name << "\'";
+            logger::error() << "could not open output file `" << defs_file_name << "`";
         }
 
         if (std::ofstream ofile(analyzer_file_name); ofile) {
@@ -336,9 +336,11 @@ int main(int argc, char** argv) {
 
             const auto& lls = dfa_builder.getLLS();
             std::vector<int> lls_idx, lls_list;
+            lls_idx.reserve(lls.size() + 1);
+            lls_list.reserve(lls.size());
             lls_idx.push_back(0);
-            for (size_t i = 0; i < lls.size(); ++i) {
-                for (unsigned n_pat : lls[i]) { lls_list.push_back(static_cast<int>(n_pat)); }
+            for (const auto& pat_set : lls) {
+                for (unsigned n_pat : pat_set) { lls_list.push_back(n_pat); }
                 lls_idx.push_back(static_cast<int>(lls_list.size()));
             }
             outputArray(ofile, "accept", accept.begin(), accept.end());
@@ -346,7 +348,7 @@ int main(int argc, char** argv) {
             outputArray(ofile, "lls_list", lls_list.begin(), lls_list.end());
             outputLexEngine(ofile, inplace_analyzer, no_compress);
         } else {
-            logger::error() << "can\'t open output file \'" << analyzer_file_name << "\'";
+            logger::error() << "could not open output file `" << analyzer_file_name << "`";
         }
 
         return 0;
