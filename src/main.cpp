@@ -34,35 +34,21 @@ void outputArray(std::ostream& outp, const std::string& array_name, Iter from, I
     }
 }
 
-void outputLexDefs(std::ostream& outp) {
-    // clang-format off
-    static constexpr std::string_view text[] = {
-        "struct InCtxData {",
-        "    const char* first = nullptr;",
-        "    const char* next = nullptr;",
-        "    const char* last = nullptr;",
-        "    bool has_more = false;",
-        "};",
-    };
-    // clang-format on
-    outp << std::endl;
-    for (const auto& l : text) { outp << l << std::endl; }
-}
-
 void outputLexEngine(std::ostream& outp, bool no_compress) {
     // clang-format off
     static constexpr std::string_view text0[] = {
-        "int lex(InCtxData& in_ctx, std::vector<int>& state_stack) {",
+        "int lex(const char* first, const char* last, std::vector<int>& state_stack, unsigned& llen, bool has_more) {",
+        "    assert(first <= last && last - first >= llen);",
         "    enum { kTrailContFlag = 1, kFlagCount = 1 };",
-        "    char symb = \'\\0\';",
         "    int state = state_stack.back();",
+        "    const char* p = first + llen;",
         "    while (true) {  // Fill buffers till transition is impossible",
-        "        if (in_ctx.next == in_ctx.last) {",
-        "            if (!in_ctx.has_more) { break; }",
+        "        if (p == last) {",
+        "            if (!has_more) { break; }",
+        "            llen = p - first;",
         "            return err_end_of_input;",
         "        }",
-        "        symb = *in_ctx.next;",
-        "        int meta = symb2meta[static_cast<unsigned char>(symb)];",
+        "        int meta = symb2meta[static_cast<unsigned char>(*p)];",
         "        if (meta < 0) { break; }",
     };
     static constexpr std::string_view text1[] = {
@@ -80,10 +66,10 @@ void outputLexEngine(std::ostream& outp, bool no_compress) {
     };
     static constexpr std::string_view text2[] = {
         "        if (state < 0) { break; }",
-        "        ++in_ctx.next;",
         "        state_stack.push_back(state);",
+        "        ++p;",
         "    }",
-        "    while (in_ctx.next != in_ctx.first) {  // Unroll downto last accepting state",
+        "    while (p != first) {  // Unroll downto last accepting state",
         "        int n_pat = accept[state_stack.back()];",
         "        if (n_pat > 0) {",
         "            bool has_trailling_context = n_pat & kTrailContFlag;",
@@ -92,25 +78,22 @@ void outputLexEngine(std::ostream& outp, bool no_compress) {
         "                do {",
         "                    state = state_stack.back();",
         "                    for (int i = lls_idx[state]; i < lls_idx[state + 1]; ++i) {",
-        "                        if (lls_list[i] == n_pat) {",
-        "                            ptrdiff_t n_remove = in_ctx.next - in_ctx.first;",
-        "                            state_stack.erase(state_stack.end() - n_remove, state_stack.end());",
-        "                            return n_pat;",
-        "                        }",
+        "                        if (lls_list[i] == n_pat) { goto accept_pat; }",
         "                    }",
-        "                    --in_ctx.next;",
+        "                    --p;",
         "                    state_stack.pop_back();",
-        "                } while (in_ctx.next != in_ctx.first);",
+        "                } while (p != first);",
         "            }",
-        "            ptrdiff_t n_remove = in_ctx.next - in_ctx.first;",
-        "            state_stack.erase(state_stack.end() - n_remove, state_stack.end());",
+        "        accept_pat:",
+        "            llen = p - first;",
+        "            state_stack.erase(state_stack.end() - llen, state_stack.end());",
         "            return n_pat;",
         "        }",
-        "        --in_ctx.next;",
+        "        --p;",
         "        state_stack.pop_back();",
         "    }",
-        "    if (in_ctx.next == in_ctx.last) { return err_end_of_input; }",
-        "    ++in_ctx.next;  // Accept at least one symbol as default pattern",
+        "    if (p == last) { return err_end_of_input; }",
+        "    ++p, llen = 1;  // Accept at least one symbol as default pattern",
         "    return predef_pat_default;",
         "}",
     };
@@ -203,6 +186,7 @@ int main(int argc, char** argv) {
             ofile << "    err_end_of_input = -1," << std::endl;
             ofile << "    predef_pat_default = 0," << std::endl;
             for (size_t i = 0; i < patterns.size(); ++i) { ofile << "    pat_" << patterns[i].id << "," << std::endl; }
+            ofile << "    total_pattern_count," << std::endl;
             ofile << "};" << std::endl;
             if (!start_conditions.empty()) {
                 ofile << std::endl << "enum {" << std::endl;
@@ -212,7 +196,10 @@ int main(int argc, char** argv) {
                 }
                 ofile << "};" << std::endl;
             }
-            outputLexDefs(ofile);
+            ofile << std::endl
+                  << "int lex(const char* first, const char* last, std::vector<int>& state_stack, "
+                     "unsigned& llen, bool has_more);"
+                  << std::endl;
         } else {
             logger::error().format("could not open output file `{}`", defs_file_name);
         }
