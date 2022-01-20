@@ -53,5 +53,5 @@ struct InCtxData {
     const char* first = nullptr;
     const char* next = nullptr;
     const char* last = nullptr;
-    const char* boundary = nullptr;
+    bool has_more = false;
 };

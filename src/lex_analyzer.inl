@@ -62,13 +62,13 @@ static int lls_list[1] = {
     1
 };
 
-static int lex(InCtxData& in_ctx, std::vector<int>& state_stack) {
+int lex(InCtxData& in_ctx, std::vector<int>& state_stack) {
     enum { kTrailContFlag = 1, kFlagCount = 1 };
     char symb = '\0';
     int state = state_stack.back();
     while (true) {  // Fill buffers till transition is impossible
-        if (in_ctx.next == in_ctx.boundary) {
-            if (in_ctx.next == in_ctx.last) { break; }
+        if (in_ctx.next == in_ctx.last) {
+            if (!in_ctx.has_more) { break; }
             return err_end_of_input;
         }
         symb = *in_ctx.next;

@@ -41,7 +41,7 @@ void outputLexDefs(std::ostream& outp) {
         "    const char* first = nullptr;",
         "    const char* next = nullptr;",
         "    const char* last = nullptr;",
-        "    const char* boundary = nullptr;",
+        "    bool has_more = false;",
         "};",
     };
     // clang-format on
@@ -57,8 +57,8 @@ void outputLexEngine(std::ostream& outp, bool no_compress) {
         "    char symb = \'\\0\';",
         "    int state = state_stack.back();",
         "    while (true) {  // Fill buffers till transition is impossible",
-        "        if (in_ctx.next == in_ctx.boundary) {",
-        "            if (in_ctx.next == in_ctx.last) { break; }",
+        "        if (in_ctx.next == in_ctx.last) {",
+        "            if (!in_ctx.has_more) { break; }",
         "            return err_end_of_input;",
         "        }",
         "        symb = *in_ctx.next;",

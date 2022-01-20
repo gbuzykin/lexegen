@@ -32,7 +32,7 @@ bool Parser::parse() {
     input_.seekg(0);
     input_.read(text_.get(), file_sz);
     lex_ctx_.first = lex_ctx_.next = text_top_ = text_.get();
-    lex_ctx_.last = lex_ctx_.boundary = text_.get() + input_.gcount();
+    lex_ctx_.last = text_.get() + input_.gcount();
     current_line_ = getNextLine(lex_ctx_.next, lex_ctx_.last);
 
     lex_state_stack_.reserve(256);
