@@ -51,7 +51,7 @@ bool Parser::parse() {
                 }
                 if (std::find(start_conditions_.begin(), start_conditions_.end(),
                               std::get<std::string_view>(tkn_.val)) != start_conditions_.end()) {
-                    logger::error(*this, tkn_.loc) << "start condition is already defined";
+                    logger::error(*this, tkn_.loc).format("start condition is already defined");
                     return false;
                 }
                 start_conditions_.emplace_back(std::get<std::string_view>(tkn_.val));
@@ -59,7 +59,7 @@ bool Parser::parse() {
             case parser_detail::tt_id: {  // Regular definition
                 std::string_view name = std::get<std::string_view>(tkn_.val);
                 if (definitions_.find(name) != definitions_.end()) {
-                    logger::error(*this, tkn_.loc) << "regular expression is already defined";
+                    logger::error(*this, tkn_.loc).format("regular expression is already defined");
                     return false;
                 }
 
@@ -94,7 +94,7 @@ bool Parser::parse() {
             std::string_view name = std::get<std::string_view>(tkn_.val);
             if (std::find_if(patterns_.begin(), patterns_.end(), [&](const auto& pat) { return pat.id == name; }) !=
                 patterns_.end()) {
-                logger::error(*this, tkn_.loc) << "pattern is already defined";
+                logger::error(*this, tkn_.loc).format("pattern is already defined");
                 return false;
             }
 
@@ -109,7 +109,7 @@ bool Parser::parse() {
                         auto sc_it = std::find(start_conditions_.begin(), start_conditions_.end(),
                                                std::get<std::string_view>(tkn_.val));
                         if (sc_it == start_conditions_.end()) {
-                            logger::error(*this, tkn_.loc) << "undefined start condition";
+                            logger::error(*this, tkn_.loc).format("undefined start condition");
                             return false;
                         }
                         sc.addValue(static_cast<unsigned>(sc_it - start_conditions_.begin()));
@@ -142,7 +142,7 @@ bool Parser::parse() {
     } while (tt != parser_detail::tt_sep);
 
     if (patterns_.empty()) {
-        logger::error(file_name_) << "no patterns defined";
+        logger::error(file_name_).format("no patterns defined");
         return false;
     }
     return true;
@@ -271,7 +271,7 @@ std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
                 case parser_detail::tt_id: {  // Insert subtree
                     auto pat_it = definitions_.find(std::get<std::string_view>(tkn_.val));
                     if (pat_it == definitions_.end()) {
-                        logger::error(*this, tkn_.loc) << "undefined regular expression";
+                        logger::error(*this, tkn_.loc).format("undefined regular expression");
                         return {nullptr, tt};
                     }
                     node_stack.emplace_back(pat_it->second->cloneTree());
@@ -486,5 +486,5 @@ void Parser::logSyntaxError(int tt) const {
         case parser_detail::tt_unterm_token: msg = "unterminated token"; break;
         default: msg = "unexpected token"; break;
     }
-    logger::error(*this, tkn_.loc) << msg;
+    logger::error(*this, tkn_.loc).format(msg);
 }
