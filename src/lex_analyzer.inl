@@ -66,11 +66,12 @@ static int lls_list[1] = {
     1
 };
 
-static int lex(CtxData& ctx, std::vector<int>& state_stack, int state) {
+static int lex(CtxData& ctx, std::vector<int>& state_stack) {
     enum { kTrailContFlag = 1, kFlagCount = 1 };
 
     // Fill buffers till transition is impossible
     char symb = '\0';
+    int state = state_stack.back();
     do {
         if (ctx.in_next == ctx.in_boundary) { return -1; }
         symb = *ctx.in_next;
@@ -90,7 +91,7 @@ static int lex(CtxData& ctx, std::vector<int>& state_stack, int state) {
     } while (symb != 0);
 
     // Unroll downto last accepting state
-    while (!state_stack.empty()) {
+    while (ctx.out_last != ctx.out_first) {
         int n_pat = accept[state_stack.back()];
         if (n_pat > 0) {
             bool has_trailling_context = n_pat & kTrailContFlag;
@@ -100,15 +101,17 @@ static int lex(CtxData& ctx, std::vector<int>& state_stack, int state) {
                     state = state_stack.back();
                     for (int i = lls_idx[state]; i < lls_idx[state + 1]; ++i) {
                         if (lls_list[i] == n_pat) {
-                            state_stack.clear();
+                            ptrdiff_t n_remove = ctx.out_last - ctx.out_first;
+                            state_stack.erase(state_stack.end() - n_remove, state_stack.end());
                             return n_pat;
                         }
                     }
                     *(--ctx.in_next) = *(--ctx.out_last);
                     state_stack.pop_back();
-                } while (!state_stack.empty());
+                } while (ctx.out_last != ctx.out_first);
             }
-            state_stack.clear();
+            ptrdiff_t n_remove = ctx.out_last - ctx.out_first;
+            state_stack.erase(state_stack.end() - n_remove, state_stack.end());
             return n_pat;
         }
         *(--ctx.in_next) = *(--ctx.out_last);

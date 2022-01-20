@@ -51,6 +51,7 @@ enum {
 };
 
 struct CtxData {
+    char* out_first = nullptr;
     char* out_last = nullptr;
     char* in_next = nullptr;
     char* in_boundary = nullptr;

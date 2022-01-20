@@ -23,7 +23,7 @@ std::string_view getNextLine(char* unread, char* boundary) {
 }  // namespace
 
 Parser::Parser(std::istream& input, std::string file_name)
-    : input_(input), file_name_(std::move(file_name)), sc_stack_({lex_detail::sc_initial}) {}
+    : input_(input), file_name_(std::move(file_name)), lex_state_stack_({lex_detail::sc_initial}) {}
 
 bool Parser::parse() {
     size_t file_sz = static_cast<size_t>(input_.seekg(0, std::ios_base::end).tellg());
@@ -33,7 +33,7 @@ bool Parser::parse() {
     input_.seekg(0);
     input_.read(text_.get(), file_sz);
     text_[input_.gcount()] = '\0';
-    lex_ctx_ = lex_detail::CtxData{text_.get(), text_.get(), text_.get() + input_.gcount() + 1};
+    lex_ctx_ = lex_detail::CtxData{text_.get(), text_.get(), text_.get(), text_.get() + input_.gcount() + 1};
     current_line_ = getNextLine(lex_ctx_.in_next, lex_ctx_.in_boundary);
 
     int tt = 0;
@@ -61,10 +61,10 @@ bool Parser::parse() {
                     return false;
                 }
 
-                sc_stack_.push_back(lex_detail::sc_regex);
+                lex_state_stack_.push_back(lex_detail::sc_regex);
                 std::unique_ptr<Node> syn_tree;
                 std::tie(syn_tree, tt) = parseRegex(lex());
-                sc_stack_.pop_back();
+                lex_state_stack_.pop_back();
 
                 if (!syn_tree) { return false; }
                 definitions_.emplace(name, std::move(syn_tree));
@@ -97,10 +97,10 @@ bool Parser::parse() {
             }
 
             ValueSet sc;
-            sc_stack_.push_back(lex_detail::sc_regex);
-            sc_stack_.push_back(lex_detail::sc_sc_list);
+            lex_state_stack_.push_back(lex_detail::sc_regex);
+            lex_state_stack_.push_back(lex_detail::sc_sc_list);
             if ((tt = lex()) == parser_detail::tt_sc_list_begin) {
-                sc_stack_.push_back(lex_detail::sc_initial);
+                lex_state_stack_.push_back(lex_detail::sc_initial);
                 // Parse start conditions
                 while (true) {
                     if ((tt = lex()) == parser_detail::tt_id) {
@@ -118,18 +118,18 @@ bool Parser::parse() {
                         return false;
                     }
                 }
-                sc_stack_.pop_back();
-                sc_stack_.pop_back();
+                lex_state_stack_.pop_back();
+                lex_state_stack_.pop_back();
                 tt = lex();
             } else {
                 // Add all start conditions
                 sc.addValues(0, static_cast<unsigned>(start_conditions_.size()) - 1);
-                sc_stack_.pop_back();
+                lex_state_stack_.pop_back();
             }
 
             std::unique_ptr<Node> syn_tree;
             std::tie(syn_tree, tt) = parseRegex(tt);
-            sc_stack_.pop_back();
+            lex_state_stack_.pop_back();
 
             if (!syn_tree) { return false; }
             patterns_.emplace_back(Pattern{name, sc, std::move(syn_tree)});
@@ -312,9 +312,9 @@ int Parser::lex() {
             ++n_line_, n_col_ = 1;
             tkn_.loc = {n_line_, n_col_, n_col_};
         }
-        char* lexeme = lex_ctx_.out_last;
-        int pat = lex_detail::lex(lex_ctx_, lex_state_stack_, sc_stack_.back());
-        unsigned lexeme_len = static_cast<unsigned>(lex_ctx_.out_last - lexeme);
+        lex_ctx_.out_first = lex_ctx_.out_last;
+        int pat = lex_detail::lex(lex_ctx_, lex_state_stack_);
+        unsigned lexeme_len = static_cast<unsigned>(lex_ctx_.out_last - lex_ctx_.out_first);
         n_col_ += lexeme_len;
         tkn_.loc.col_last = n_col_ - 1;
 
@@ -328,26 +328,26 @@ int Parser::lex() {
             case lex_detail::pat_escape_r: escape = '\r'; break;
             case lex_detail::pat_escape_t: escape = '\t'; break;
             case lex_detail::pat_escape_v: escape = '\v'; break;
-            case lex_detail::pat_escape_other: escape = lexeme[1]; break;
+            case lex_detail::pat_escape_other: escape = lex_ctx_.out_first[1]; break;
             case lex_detail::pat_escape_hex: {
-                escape = hdig(lexeme[2]);
-                if (lexeme_len > 3) { *escape = (*escape << 4) + hdig(lexeme[3]); }
+                escape = hdig(lex_ctx_.out_first[2]);
+                if (lexeme_len > 3) { *escape = (*escape << 4) + hdig(lex_ctx_.out_first[3]); }
             } break;
             case lex_detail::pat_escape_oct: {
-                escape = dig(lexeme[1]);
-                if (lexeme_len > 2) { *escape = (*escape << 3) + dig(lexeme[2]); }
-                if (lexeme_len > 3) { *escape = (*escape << 3) + dig(lexeme[3]); }
+                escape = dig(lex_ctx_.out_first[1]);
+                if (lexeme_len > 2) { *escape = (*escape << 3) + dig(lex_ctx_.out_first[2]); }
+                if (lexeme_len > 3) { *escape = (*escape << 3) + dig(lex_ctx_.out_first[3]); }
             } break;
 
             // ------ strings
             case lex_detail::pat_string: {
                 str_start = lex_ctx_.out_last;
-                sc_stack_.push_back(lex_detail::sc_string);
+                lex_state_stack_.push_back(lex_detail::sc_string);
             } break;
             case lex_detail::pat_string_seq: break;
             case lex_detail::pat_string_close: {
-                tkn_.val = std::string_view(str_start, lexeme - str_start);
-                sc_stack_.pop_back();
+                tkn_.val = std::string_view(str_start, lex_ctx_.out_first - str_start);
+                lex_state_stack_.pop_back();
                 return parser_detail::tt_string;
             } break;
 
@@ -358,15 +358,15 @@ int Parser::lex() {
                 sset_range_flag = false;
                 sset_last = 0;
                 tkn_.val = ValueSet();
-                sc_stack_.push_back(lex_detail::sc_sset);
+                lex_state_stack_.push_back(lex_detail::sc_sset);
             } break;
             case lex_detail::pat_regex_sset_seq: {
                 if (sset_range_flag) {
-                    std::get<ValueSet>(tkn_.val).addValues(sset_last, static_cast<unsigned char>(*lexeme));
+                    std::get<ValueSet>(tkn_.val).addValues(sset_last, static_cast<unsigned char>(*lex_ctx_.out_first));
                     sset_range_flag = false;
                 }
                 sset_last = static_cast<unsigned char>(*(lex_ctx_.out_last - 1));
-                for (const char* l = lexeme; l < lex_ctx_.out_last; ++l) {
+                for (const char* l = lex_ctx_.out_first; l < lex_ctx_.out_last; ++l) {
                     std::get<ValueSet>(tkn_.val).addValue(static_cast<unsigned char>(*l));
                 }
             } break;
@@ -380,7 +380,7 @@ int Parser::lex() {
             case lex_detail::pat_regex_sset_close: {
                 if (sset_range_flag) { std::get<ValueSet>(tkn_.val).addValue('-'); }  // Treat `-` as a character
                 if (sset_is_inverted) { std::get<ValueSet>(tkn_.val) ^= ValueSet(1, 255); }
-                sc_stack_.pop_back();
+                lex_state_stack_.pop_back();
                 return parser_detail::tt_sset;
             } break;
             case lex_detail::pat_regex_dot: {
@@ -389,7 +389,7 @@ int Parser::lex() {
                 return parser_detail::tt_sset;
             } break;
             case lex_detail::pat_regex_symb: {
-                tkn_.val = static_cast<unsigned char>(*lexeme);
+                tkn_.val = static_cast<unsigned char>(*lex_ctx_.out_first);
                 return parser_detail::tt_symb;
             } break;
             case lex_detail::pat_regex_eof_symb: {
@@ -397,28 +397,28 @@ int Parser::lex() {
                 return parser_detail::tt_symb;
             } break;
             case lex_detail::pat_regex_id: {  // {id}
-                tkn_.val = std::string_view(lexeme + 1, lex_ctx_.out_last - lexeme - 2);
+                tkn_.val = std::string_view(lex_ctx_.out_first + 1, lexeme_len - 2);
                 return parser_detail::tt_id;
             } break;
             case lex_detail::pat_regex_br: {
-                sc_stack_.push_back(lex_detail::sc_regex_br);
+                lex_state_stack_.push_back(lex_detail::sc_regex_br);
                 return '{';
             } break;
             case lex_detail::pat_regex_br_close: {
-                sc_stack_.pop_back();
+                lex_state_stack_.pop_back();
                 return '}';
             } break;
 
             // ------ identifier
             case lex_detail::pat_id: {
-                tkn_.val = std::string_view(lexeme, lex_ctx_.out_last - lexeme);
+                tkn_.val = std::string_view(lex_ctx_.out_first, lexeme_len);
                 return parser_detail::tt_id;
             } break;
 
             // ------ integer number
             case lex_detail::pat_num: {
                 unsigned num = 0;
-                for (const char* l = lexeme; l < lex_ctx_.out_last; ++l) { num = 10 * num + dig(*l); }
+                for (const char* l = lex_ctx_.out_first; l < lex_ctx_.out_last; ++l) { num = 10 * num + dig(*l); }
                 tkn_.val = num;
                 return parser_detail::tt_num;
             } break;
@@ -434,7 +434,7 @@ int Parser::lex() {
             case lex_detail::pat_start: return parser_detail::tt_start;
             case lex_detail::pat_option: return parser_detail::tt_option;
             case lex_detail::pat_sep: return parser_detail::tt_sep;
-            case lex_detail::pat_other: return static_cast<unsigned char>(*lexeme);
+            case lex_detail::pat_other: return static_cast<unsigned char>(*lex_ctx_.out_first);
             case lex_detail::pat_eof: return parser_detail::tt_eof;
             case lex_detail::pat_whitespace: tkn_.loc.col_first = n_col_; break;
             case lex_detail::pat_nl: break;
@@ -443,10 +443,10 @@ int Parser::lex() {
         }
 
         if (escape) {  // Process escape character
-            switch (sc_stack_.back()) {
+            switch (lex_state_stack_.back()) {
                 case lex_detail::sc_string: {
-                    *lexeme = *escape;
-                    lex_ctx_.out_last = lexeme + 1;
+                    *lex_ctx_.out_first = *escape;
+                    lex_ctx_.out_last = lex_ctx_.out_first + 1;
                 } break;
                 case lex_detail::sc_sset: {
                     if (sset_range_flag) {

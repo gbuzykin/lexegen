@@ -47,7 +47,6 @@ class Parser {
     std::unique_ptr<char[]> text_;
     std::string current_line_;
     unsigned n_line_ = 1, n_col_ = 1;
-    std::vector<int> sc_stack_;
     lex_detail::CtxData lex_ctx_;
     std::vector<int> lex_state_stack_;
     TokenInfo tkn_;
