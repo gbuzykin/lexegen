@@ -34,31 +34,57 @@ void outputArray(std::ostream& outp, const std::string& array_name, Iter from, I
     }
 }
 
-void outputLexDefs(std::ostream& outp) {
+void outputLexDefs(std::ostream& outp, bool inplace) {
     // clang-format off
     static constexpr std::string_view text[] = {
+        "struct OutCtxData {",
+        "    char* last = nullptr;",
+        "    char* boundary = nullptr;",
+        "};",
+        "struct InCtxData {",
+        "    const char* next = nullptr;",
+        "    const char* boundary = nullptr;",
+        "};",
+    };
+    static constexpr std::string_view text_inplace[] = {
         "struct CtxData {",
-        "    char* text_last = nullptr;",
-        "    char* text_unread = nullptr;",
-        "    char* text_boundary = nullptr;",
+        "    char* out_last = nullptr;",
+        "    char* in_next = nullptr;",
+        "    char* in_boundary = nullptr;",
         "};",
     };
     // clang-format on
     outp << std::endl;
-    for (const auto& l : text) { outp << l << std::endl; }
+    if (inplace) {
+        for (const auto& l : text_inplace) { outp << l << std::endl; }
+    } else {
+        for (const auto& l : text) { outp << l << std::endl; }
+    }
 }
 
-void outputLexEngine(std::ostream& outp, bool no_compress) {
+void outputLexEngine(std::ostream& outp, bool inplace, bool no_compress) {
     // clang-format off
     static constexpr std::string_view text0[] = {
+        "int lex(OutCtxData& out_ctx, InCtxData& in_ctx, std::vector<int>& state_stack, int state) {",
+        "    enum { kTrailContFlag = 1, kFlagCount = 1 };",
+        "",
+        "    // Fill buffers till transition is impossible",
+        "    char symb = \'\\0\';",
+        "    do {",
+        "        if (in_ctx.next == in_ctx.boundary) { return -1; }",
+        "        symb = *in_ctx.next;",
+        "        int meta = symb2meta[static_cast<unsigned char>(symb)];",
+        "        if (meta < 0) { break; }",
+    };
+    static constexpr std::string_view text0_inplace[] = {
         "int lex(CtxData& ctx, std::vector<int>& state_stack, int state) {",
         "    enum { kTrailContFlag = 1, kFlagCount = 1 };",
         "",
         "    // Fill buffers till transition is impossible",
         "    char symb = \'\\0\';",
         "    do {",
-        "        if (ctx.text_unread == ctx.text_boundary) { return -1; }",
-        "        symb = *ctx.text_unread;",
+        "        if (ctx.in_next == ctx.in_boundary) { return -1; }",
+        "        symb = *ctx.in_next;",
         "        int meta = symb2meta[static_cast<unsigned char>(symb)];",
         "        if (meta < 0) { break; }",
     };
@@ -77,8 +103,8 @@ void outputLexEngine(std::ostream& outp, bool no_compress) {
     };
     static constexpr std::string_view text2[] = {
         "        if (state < 0) { break; }",
-        "        *ctx.text_last++ = symb;",
-        "        ++ctx.text_unread;",
+        "        if (out_ctx.last == out_ctx.boundary) { return -1; }",
+        "        ++in_ctx.next, *out_ctx.last++ = symb;",
         "        state_stack.push_back(state);",
         "    } while (symb != 0);",
         "",
@@ -97,31 +123,77 @@ void outputLexEngine(std::ostream& outp, bool no_compress) {
         "                            return n_pat;",
         "                        }",
         "                    }",
-        "                    *(--ctx.text_unread) = *(--ctx.text_last);",
+        "                    --in_ctx.next, --out_ctx.last;",
         "                    state_stack.pop_back();",
         "                } while (!state_stack.empty());",
         "            }",
         "            state_stack.clear();",
         "            return n_pat;",
         "        }",
-        "        *(--ctx.text_unread) = *(--ctx.text_last);",
+        "        --in_ctx.next, --out_ctx.last;",
         "        state_stack.pop_back();",
         "    }",
         "",
         "    // Default pattern",
-        "    *ctx.text_last++ = *ctx.text_unread++;",
+        "    if (out_ctx.last == out_ctx.boundary) { return -1; }",
+        "    *out_ctx.last++ = *in_ctx.next++;",
+        "    return predef_pat_default;",
+        "}",
+    };
+    static constexpr std::string_view text2_inplace[] = {
+        "        if (state < 0) { break; }",
+        "        ++ctx.in_next, *ctx.out_last++ = symb;",
+        "        state_stack.push_back(state);",
+        "    } while (symb != 0);",
+        "",
+        "    // Unroll downto last accepting state",
+        "    while (!state_stack.empty()) {",
+        "        int n_pat = accept[state_stack.back()];",
+        "        if (n_pat > 0) {",
+        "            bool has_trailling_context = n_pat & kTrailContFlag;",
+        "            n_pat >>= kFlagCount;",
+        "            if (has_trailling_context) {",
+        "                do {",
+        "                    state = state_stack.back();",
+        "                    for (int i = lls_idx[state]; i < lls_idx[state + 1]; ++i) {",
+        "                        if (lls_list[i] == n_pat) {",
+        "                            state_stack.clear();",
+        "                            return n_pat;",
+        "                        }",
+        "                    }",
+        "                    *(--ctx.in_next) = *(--ctx.out_last);",
+        "                    state_stack.pop_back();",
+        "                } while (!state_stack.empty());",
+        "            }",
+        "            state_stack.clear();",
+        "            return n_pat;",
+        "        }",
+        "        *(--ctx.in_next) = *(--ctx.out_last);",
+        "        state_stack.pop_back();",
+        "    }",
+        "",
+        "    // Default pattern",
+        "    *ctx.out_last++ = *ctx.in_next++;",
         "    return predef_pat_default;",
         "}",
     };
     // clang-format on
     outp << std::endl;
-    for (const auto& l : text0) { outp << l << std::endl; }
+    if (inplace) {
+        for (const auto& l : text0_inplace) { outp << l << std::endl; }
+    } else {
+        for (const auto& l : text0) { outp << l << std::endl; }
+    }
     if (no_compress) {
         for (const auto& l : text1_no_compress) { outp << l << std::endl; }
     } else {
         for (const auto& l : text1) { outp << l << std::endl; }
     }
-    for (const auto& l : text2) { outp << l << std::endl; }
+    if (inplace) {
+        for (const auto& l : text2_inplace) { outp << l << std::endl; }
+    } else {
+        for (const auto& l : text2) { outp << l << std::endl; }
+    }
 }
 
 //---------------------------------------------------------------------------------------
@@ -130,6 +202,7 @@ int main(int argc, char** argv) {
     try {
         bool case_insensitive = false;
         bool no_compress = false;
+        bool inplace_analyzer = false;
         int optimization_level = 1;
         std::string input_file_name;
         std::string analyzer_file_name("lex_analyzer.inl");
@@ -140,6 +213,8 @@ int main(int argc, char** argv) {
                 if (++i < argc) { analyzer_file_name = argv[i]; }
             } else if (arg == "-h") {
                 if (++i < argc) { defs_file_name = argv[i]; }
+            } else if (arg == "--inplace") {
+                inplace_analyzer = true;
             } else if (arg == "--no-case") {
                 case_insensitive = true;
             } else if (arg == "--no-compress") {
@@ -153,6 +228,7 @@ int main(int argc, char** argv) {
                     "Options:",
                     "    -o <file>      Place the output analyzer into <file>.",
                     "    -h <file>      Place the output definitions into <file>.",
+                    "    --inplace      Build analyzer which uses the same buffer for input and output text.",
                     "    --no-case      Build case insensitive analyzer.",
                     "    --no-compress  Do not compress analyzer table.",
                     "    -O0            Do not optimize analyzer.",
@@ -210,7 +286,7 @@ int main(int argc, char** argv) {
                 }
                 ofile << "};" << std::endl;
             }
-            outputLexDefs(ofile);
+            outputLexDefs(ofile, inplace_analyzer);
         } else {
             logger::error() << "can\'t open output file \'" << defs_file_name << "\'";
         }
@@ -260,7 +336,7 @@ int main(int argc, char** argv) {
             outputArray(ofile, "accept", accept.begin(), accept.end());
             outputArray(ofile, "lls_idx", lls_idx.begin(), lls_idx.end());
             outputArray(ofile, "lls_list", lls_list.begin(), lls_list.end());
-            outputLexEngine(ofile, no_compress);
+            outputLexEngine(ofile, inplace_analyzer, no_compress);
         } else {
             logger::error() << "can\'t open output file \'" << analyzer_file_name << "\'";
         }

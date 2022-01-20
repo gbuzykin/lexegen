@@ -72,8 +72,8 @@ static int lex(CtxData& ctx, std::vector<int>& state_stack, int state) {
     // Fill buffers till transition is impossible
     char symb = '\0';
     do {
-        if (ctx.text_unread == ctx.text_boundary) { return -1; }
-        symb = *ctx.text_unread;
+        if (ctx.in_next == ctx.in_boundary) { return -1; }
+        symb = *ctx.in_next;
         int meta = symb2meta[static_cast<unsigned char>(symb)];
         if (meta < 0) { break; }
         do {
@@ -85,8 +85,7 @@ static int lex(CtxData& ctx, std::vector<int>& state_stack, int state) {
             state = def[state];
         } while (state >= 0);
         if (state < 0) { break; }
-        *ctx.text_last++ = symb;
-        ++ctx.text_unread;
+        ++ctx.in_next, *ctx.out_last++ = symb;
         state_stack.push_back(state);
     } while (symb != 0);
 
@@ -105,18 +104,18 @@ static int lex(CtxData& ctx, std::vector<int>& state_stack, int state) {
                             return n_pat;
                         }
                     }
-                    *(--ctx.text_unread) = *(--ctx.text_last);
+                    *(--ctx.in_next) = *(--ctx.out_last);
                     state_stack.pop_back();
                 } while (!state_stack.empty());
             }
             state_stack.clear();
             return n_pat;
         }
-        *(--ctx.text_unread) = *(--ctx.text_last);
+        *(--ctx.in_next) = *(--ctx.out_last);
         state_stack.pop_back();
     }
 
     // Default pattern
-    *ctx.text_last++ = *ctx.text_unread++;
+    *ctx.out_last++ = *ctx.in_next++;
     return predef_pat_default;
 }
