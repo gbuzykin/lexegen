@@ -3,7 +3,6 @@
 #include "logger.h"
 #include "valset.h"
 
-#include <iostream>
 #include <memory>
 #include <unordered_map>
 #include <variant>
@@ -30,7 +29,7 @@ class Parser {
         std::unique_ptr<Node> syn_tree;
     };
 
-    Parser(std::istream& input, std::string file_name);
+    Parser(util::iobuf& input, std::string file_name);
     bool parse();
     const std::string& getFileName() const { return file_name_; }
     const std::string& getCurrentLine() const { return current_line_; }
@@ -52,7 +51,7 @@ class Parser {
         unsigned ln = 1, col = 1;
     };
 
-    std::istream& input_;
+    util::iobuf& input_;
     std::string file_name_;
     std::unique_ptr<char[]> text_;
     std::string current_line_;
@@ -66,13 +65,6 @@ class Parser {
     std::vector<Pattern> patterns_;
 
     std::pair<std::unique_ptr<Node>, int> parseRegex(int tt);
-
-    static int dig(char ch) { return static_cast<int>(ch - '0'); }
-    static int hdig(char ch) {
-        if ((ch >= 'a') && (ch <= 'f')) { return static_cast<int>(ch - 'a') + 10; }
-        if ((ch >= 'A') && (ch <= 'F')) { return static_cast<int>(ch - 'A') + 10; }
-        return static_cast<int>(ch - '0');
-    }
 
     int lex();
     void logSyntaxError(int tt) const;
