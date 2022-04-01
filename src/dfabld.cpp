@@ -1,11 +1,10 @@
 #include "dfabld.h"
 
 #include "node.h"
+#include "util/algorithm.h"
+#include "util/format.h"
 
-#include <algorithm>
 #include <cctype>
-#include <iostream>
-#include <stdexcept>
 #include <unordered_map>
 
 void DfaBuilder::addPattern(std::unique_ptr<Node> syn_tree, unsigned n_pat, const ValueSet& sc) {
@@ -17,14 +16,14 @@ void DfaBuilder::addPattern(std::unique_ptr<Node> syn_tree, unsigned n_pat, cons
 }
 
 bool DfaBuilder::isPatternWithTrailCont(unsigned n_pat) const {
-    return std::any_of(patterns_.begin(), patterns_.end(), [n_pat](const auto& pat) {
+    return util::any_of(patterns_, [n_pat](const auto& pat) {
         return static_cast<const TermNode*>(pat.syn_tree->getRight())->getPatternNo() == n_pat &&
                pat.syn_tree->getLeft()->getType() == NodeType::kTrailCont;
     });
 }
 
 void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
-    std::cout << "Building lexer..." << std::endl;
+    util::stdbuf::out.write("\033[1;34mBuilding lexer...\033[0m").endl();
 
     std::vector<PositionalNode*> positions;
     std::vector<ValueSet> states;
@@ -34,9 +33,9 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
     positions.reserve(1024);
     for (const auto& pat : patterns_) { pat.syn_tree->calcFunctions(positions); }
 
-    std::cout << " - pattern count: " << patterns_.size() << std::endl;
-    std::cout << " - S-state count: " << sc_count_ << std::endl;
-    std::cout << " - position count: " << positions.size() << std::endl;
+    util::println(" - pattern count: {}", patterns_.size());
+    util::println(" - S-state count: {}", sc_count_);
+    util::println(" - position count: {}", positions.size());
 
     auto calc_eps_closure = [&positions](const ValueSet& T) {
         ValueSet closure = T;
@@ -98,8 +97,8 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
 
             if (!U.empty()) {
                 auto U_closure = calc_eps_closure(U);
-                if (auto found = std::find(states.begin(), states.end(), U_closure); found != states.end()) {
-                    Dtran_[T_idx][symb] = static_cast<unsigned>(found - states.begin());
+                if (auto [it, found] = util::find(states, U_closure); found) {
+                    Dtran_[T_idx][symb] = static_cast<unsigned>(it - states.begin());
                 } else {
                     pending_states.push_back(Dtran_[T_idx][symb] = add_state(U_closure));
                 }
@@ -108,14 +107,12 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
     } while (pending_states.size() > 0);
 
     auto is_dead_symb = [&Dtran = Dtran_](unsigned s) {
-        return std::all_of(Dtran.begin(), Dtran.end(), [s](const auto& T) { return T[s] == -1; });
+        return util::all_of(Dtran, [s](const auto& T) { return T[s] == -1; });
     };
 
     auto get_equiv_symb = [&Dtran = Dtran_](unsigned s) {
         for (unsigned s2 = 0; s2 < s; ++s2) {
-            if (std::all_of(Dtran.begin(), Dtran.end(), [s, s2](const auto& T) { return T[s] == T[s2]; })) {
-                return s2;
-            }
+            if (util::all_of(Dtran, [s, s2](const auto& T) { return T[s] == T[s2]; })) { return s2; }
         }
         return s;
     };
@@ -172,14 +169,14 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
         lls_.emplace_back(get_lls_patterns(T));
     }
 
-    std::cout << " - meta-symbol count: " << meta_count_ << std::endl;
-    std::cout << " - state count: " << Dtran_.size() << std::endl;
-    std::cout << " - transition table size: " << meta_count_ * Dtran_.size() * sizeof(int) << " bytes" << std::endl;
-    std::cout << "Done." << std::endl;
+    util::println(" - meta-symbol count: {}", meta_count_);
+    util::println(" - state count: {}", Dtran_.size());
+    util::println(" - transition table size: {} bytes", meta_count_ * Dtran_.size() * sizeof(int));
+    util::stdbuf::out.write("\033[0;32mDone.\033[0m").endl();
 }
 
 void DfaBuilder::optimize() {
-    std::cout << "Optimizing states..." << std::endl;
+    util::stdbuf::out.write("\033[1;34mOptimizing states...\033[0m").endl();
 
     std::vector<unsigned> state_group(Dtran_.size());
     std::vector<int> group_main_state;
@@ -232,7 +229,7 @@ void DfaBuilder::optimize() {
     unsigned group_count = static_cast<unsigned>(
         std::count_if(group_main_state.begin(), group_main_state.end(), [](int state) { return state >= 0; }));
 
-    std::cout << " - state group count: " << group_count << std::endl;
+    util::println(" - state group count: {}", group_count);
 
     auto is_dead_group = [&state_group, &group_main_state, meta_count = meta_count_, &Dtran = Dtran_,
                           &accept = accept_](unsigned group) {
@@ -268,15 +265,13 @@ void DfaBuilder::optimize() {
         }
     }
 
-    std::cout << " - dead group count: " << dead_group_count << std::endl;
+    util::println(" - dead group count: {}", dead_group_count);
 
     auto get_main_state = [&state_group, &group_main_state](unsigned state) {
         return group_main_state[state_group[state]];
     };
 
-    auto is_used_state = [&state_group, &group_main_state, &get_main_state](unsigned state) {
-        return get_main_state(state) == state;
-    };
+    auto is_used_state = [&get_main_state](unsigned state) { return get_main_state(state) == state; };
 
     // Select new main states
     unsigned new_state_count = 0;
@@ -300,14 +295,14 @@ void DfaBuilder::optimize() {
     accept_.resize(new_state_count);
     lls_.resize(new_state_count);
 
-    std::cout << " - new state count: " << Dtran_.size() << std::endl;
-    std::cout << " - transition table size: " << meta_count_ * Dtran_.size() * sizeof(int) << " bytes" << std::endl;
-    std::cout << "Done." << std::endl;
+    util::println(" - new state count: {}", Dtran_.size());
+    util::println(" - transition table size: {} bytes", meta_count_ * Dtran_.size() * sizeof(int));
+    util::stdbuf::out.write("\033[0;32mDone.\033[0m").endl();
 }
 
 void DfaBuilder::makeCompressedDtran(std::vector<int>& def, std::vector<int>& base, std::vector<int>& next,
                                      std::vector<int>& check) const {
-    std::cout << "Compressing tables..." << std::endl;
+    util::stdbuf::out.write("\033[1;34mCompressing tables...\033[0m").endl();
 
     assert(!Dtran_.empty());
     def.resize(Dtran_.size());
@@ -409,7 +404,7 @@ void DfaBuilder::makeCompressedDtran(std::vector<int>& def, std::vector<int>& ba
         }
     }
 
-    std::cout << " - total compressed transition table size: "
-              << (def.size() + base.size() + next.size() + check.size()) * sizeof(int) << " bytes" << std::endl;
-    std::cout << "Done." << std::endl;
+    util::println(" - total compressed transition table size: {} bytes",
+                  (def.size() + base.size() + next.size() + check.size()) * sizeof(int));
+    util::stdbuf::out.write("\033[0;32mDone.\033[0m").endl();
 }

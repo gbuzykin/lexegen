@@ -1,40 +1,38 @@
 #include "dfabld.h"
 #include "node.h"
 #include "parser.h"
-
-#include <algorithm>
-#include <fstream>
+#include "util/io/filebuf.h"
 
 template<typename Iter>
-void outputData(std::ostream& outp, Iter from, Iter to, size_t ntab = 0) {
+void outputData(util::iobuf& outp, Iter from, Iter to, size_t ntab = 0) {
     if (from == to) { return; }
     const unsigned length_limit = 120;
-    std::string tab(ntab, ' '), line = tab + std::to_string(*from);
+    std::string tab(ntab, ' '), line = tab + util::to_string(*from);
     while (++from != to) {
-        auto sval = std::to_string(*from);
+        auto sval = util::to_string(*from);
         if (line.length() + sval.length() + 3 > length_limit) {
-            outp << line << "," << std::endl;
+            outp.write(line).put(',').endl();
             line = tab + sval;
         } else {
             line += ", " + sval;
         }
     }
-    outp << line << std::endl;
+    outp.write(line).endl();
 }
 
 template<typename Iter>
-void outputArray(std::ostream& outp, const std::string& array_name, Iter from, Iter to) {
-    outp << std::endl << "static int " << array_name;
+void outputArray(util::iobuf& outp, const std::string& array_name, Iter from, Iter to) {
+    outp.endl().write("static int ").write(array_name);
     if (from == to) {
-        outp << "[1] = { 0 };" << std::endl;
+        outp.write("[1] = { 0 };").endl();
     } else {
-        outp << "[" << std::distance(from, to) << "] = {" << std::endl;
+        util::fprintln(outp, "[{}] = {{", std::distance(from, to));
         outputData(outp, from, to, 4);
-        outp << "};" << std::endl;
+        outp.write("};").endl();
     }
 }
 
-void outputLexEngine(std::ostream& outp, bool no_compress) {
+void outputLexEngine(util::iobuf& outp, bool no_compress) {
     // clang-format off
     static constexpr std::string_view text0[] = {
         "int lex(const char* first, const char* last, std::vector<int>& state_stack, unsigned& llen, bool has_more) {",
@@ -45,7 +43,7 @@ void outputLexEngine(std::ostream& outp, bool no_compress) {
         "    while (true) {  // Fill buffers till transition is impossible",
         "        if (p == last) {",
         "            if (!has_more) { break; }",
-        "            llen = p - first;",
+        "            llen = static_cast<unsigned>(p - first);",
         "            return err_end_of_input;",
         "        }",
         "        int meta = symb2meta[static_cast<unsigned char>(*p)];",
@@ -85,7 +83,7 @@ void outputLexEngine(std::ostream& outp, bool no_compress) {
         "                } while (p != first);",
         "            }",
         "        accept_pat:",
-        "            llen = p - first;",
+        "            llen = static_cast<unsigned>(p - first);",
         "            state_stack.erase(state_stack.end() - llen, state_stack.end());",
         "            return n_pat;",
         "        }",
@@ -98,14 +96,14 @@ void outputLexEngine(std::ostream& outp, bool no_compress) {
         "}",
     };
     // clang-format on
-    outp << std::endl;
-    for (const auto& l : text0) { outp << l << std::endl; }
+    outp.endl();
+    for (const auto& l : text0) { outp.write(l).endl(); }
     if (no_compress) {
-        for (const auto& l : text1_no_compress) { outp << l << std::endl; }
+        for (const auto& l : text1_no_compress) { outp.write(l).endl(); }
     } else {
-        for (const auto& l : text1) { outp << l << std::endl; }
+        for (const auto& l : text1) { outp.write(l).endl(); }
     }
-    for (const auto& l : text2) { outp << l << std::endl; }
+    for (const auto& l : text2) { outp.write(l).endl(); }
 }
 
 //---------------------------------------------------------------------------------------
@@ -132,7 +130,7 @@ int main(int argc, char** argv) {
                 optimization_level = 0;
             } else if (arg == "--help") {
                 // clang-format off
-                static const char* text[] = {
+                static constexpr std::string_view text[] = {
                     "Usage: lexegen [options] file",
                     "Options:",
                     "    -o <file>      Place the output analyzer into <file>.",
@@ -143,7 +141,7 @@ int main(int argc, char** argv) {
                     "    --help         Display this information.",
                 };
                 // clang-format on
-                for (const char* l : text) { std::cout << l << std::endl; }
+                for (const auto& l : text) { util::stdbuf::out.write(l).endl(); }
                 return 0;
             } else if (arg[0] != '-') {
                 input_file_name = arg;
@@ -158,7 +156,7 @@ int main(int argc, char** argv) {
             return -1;
         }
 
-        std::ifstream ifile(input_file_name);
+        util::filebuf ifile(input_file_name.c_str(), "rt");
         if (!ifile) {
             logger::fatal().format("could not open input file `{}`", input_file_name);
             return -1;
@@ -180,46 +178,47 @@ int main(int argc, char** argv) {
         dfa_builder.build(static_cast<unsigned>(start_conditions.size()), case_insensitive);
         if (optimization_level > 0) { dfa_builder.optimize(); }
 
-        if (std::ofstream ofile(defs_file_name); ofile) {
-            ofile << "// Lexegen autogenerated definition file - do not edit!" << std::endl;
-            ofile << std::endl << "enum {" << std::endl;
-            ofile << "    err_end_of_input = -1," << std::endl;
-            ofile << "    predef_pat_default = 0," << std::endl;
-            for (size_t i = 0; i < patterns.size(); ++i) { ofile << "    pat_" << patterns[i].id << "," << std::endl; }
-            ofile << "    total_pattern_count," << std::endl;
-            ofile << "};" << std::endl;
+        if (util::filebuf ofile(defs_file_name.c_str(), "wt"); ofile) {
+            ofile.write("// Lexegen autogenerated definition file - do not edit!").endl();
+            ofile.endl().write("enum {").endl();
+            ofile.write("    err_end_of_input = -1,").endl();
+            ofile.write("    predef_pat_default = 0,").endl();
+            for (size_t i = 0; i < patterns.size(); ++i) { util::fprintln(ofile, "    pat_{},", patterns[i].id); }
+            ofile.write("    total_pattern_count,").endl();
+            ofile.write("};").endl();
             if (!start_conditions.empty()) {
-                ofile << std::endl << "enum {" << std::endl;
-                ofile << "    sc_" << start_conditions[0] << " = 0," << std::endl;
+                ofile.endl().write("enum {").endl();
+                util::fprintln(ofile, "    sc_{} = 0,", start_conditions[0]);
                 for (size_t i = 1; i < start_conditions.size(); ++i) {
-                    ofile << "    sc_" << start_conditions[i] << "," << std::endl;
+                    util::fprintln(ofile, "    sc_{},", start_conditions[i]);
                 }
-                ofile << "};" << std::endl;
+                ofile.write("};").endl();
             }
-            ofile << std::endl
-                  << "int lex(const char* first, const char* last, std::vector<int>& state_stack, "
-                     "unsigned& llen, bool has_more);"
-                  << std::endl;
+            ofile.endl();
+            ofile.write(
+                "int lex(const char* first, const char* last, std::vector<int>& state_stack, "
+                "unsigned& llen, bool has_more);");
+            ofile.endl();
         } else {
             logger::error().format("could not open output file `{}`", defs_file_name);
         }
 
-        if (std::ofstream ofile(analyzer_file_name); ofile) {
-            ofile << "// Lexegen autogenerated analyzer file - do not edit!" << std::endl;
+        if (util::filebuf ofile(analyzer_file_name.c_str(), "wt"); ofile) {
+            ofile.write("// Lexegen autogenerated analyzer file - do not edit!").endl();
             const auto& symb2meta = dfa_builder.getSymb2Meta();
             const auto& Dtran = dfa_builder.getDtran();
             outputArray(ofile, "symb2meta", symb2meta.begin(), symb2meta.end());
             if (no_compress) {
                 if (!Dtran.empty()) {
-                    ofile << std::endl
-                          << "static int Dtran[" << Dtran.size() << "][" << dfa_builder.getMetaCount() << "] = {"
-                          << std::endl;
+                    ofile.endl();
+                    util::fprintln(ofile, "static int Dtran[{}][{}] = {{", Dtran.size(), dfa_builder.getMetaCount())
+                        .endl();
                     for (size_t j = 0; j < Dtran.size(); ++j) {
-                        ofile << (j == 0 ? "    {" : ", {") << std::endl;
+                        ofile.write(j == 0 ? "    {" : ", {").endl();
                         outputData(ofile, Dtran[j].begin(), Dtran[j].begin() + dfa_builder.getMetaCount(), 8);
-                        ofile << "    }";
+                        ofile.write("    }");
                     }
-                    ofile << std::endl << "};" << std::endl;
+                    ofile.endl().write("};").endl();
                 }
             } else {
                 std::vector<int> def, base, next, check;

@@ -1,8 +1,8 @@
 #include "parser.h"
 
 #include "node.h"
+#include "util/algorithm.h"
 
-#include <algorithm>
 #include <optional>
 
 namespace lex_detail {
@@ -22,17 +22,19 @@ std::string_view getNextLine(const char* text, const char* boundary) {
 }
 }  // namespace
 
-Parser::Parser(std::istream& input, std::string file_name) : input_(input), file_name_(std::move(file_name)) {}
+Parser::Parser(util::iobuf& input, std::string file_name) : input_(input), file_name_(std::move(file_name)) {}
 
 bool Parser::parse() {
-    size_t file_sz = static_cast<size_t>(input_.seekg(0, std::ios_base::end).tellg());
+    std::streampos pos = input_.seek(0, util::seekdir::kEnd);
+    if (pos < 0) { return false; }
+    size_t file_sz = static_cast<size_t>(pos);
     text_ = std::make_unique<char[]>(file_sz);
 
     // Read the whole file
-    input_.seekg(0);
-    input_.read(text_.get(), file_sz);
+    input_.seek(0);
+    size_t n_read = input_.read(util::as_span(text_.get(), file_sz));
     in_ctx_.first = text_top_ = text_.get();
-    in_ctx_.last = text_.get() + input_.gcount();
+    in_ctx_.last = text_.get() + n_read;
     current_line_ = getNextLine(in_ctx_.first, in_ctx_.last);
 
     lex_state_stack_.reserve(256);
@@ -49,8 +51,7 @@ bool Parser::parse() {
                     logSyntaxError(tt);
                     return false;
                 }
-                if (std::find(start_conditions_.begin(), start_conditions_.end(),
-                              std::get<std::string_view>(tkn_.val)) != start_conditions_.end()) {
+                if (util::contains(start_conditions_, std::get<std::string_view>(tkn_.val))) {
                     logger::error(*this, tkn_.loc).format("start condition is already defined");
                     return false;
                 }
@@ -58,7 +59,7 @@ bool Parser::parse() {
             } break;
             case parser_detail::tt_id: {  // Regular definition
                 std::string_view name = std::get<std::string_view>(tkn_.val);
-                if (definitions_.find(name) != definitions_.end()) {
+                if (util::contains(definitions_, name)) {
                     logger::error(*this, tkn_.loc).format("regular expression is already defined");
                     return false;
                 }
@@ -92,8 +93,7 @@ bool Parser::parse() {
     do {
         if ((tt = lex()) == parser_detail::tt_id) {
             std::string_view name = std::get<std::string_view>(tkn_.val);
-            if (std::find_if(patterns_.begin(), patterns_.end(), [&](const auto& pat) { return pat.id == name; }) !=
-                patterns_.end()) {
+            if (util::contains_if(patterns_, [&](const auto& pat) { return pat.id == name; })) {
                 logger::error(*this, tkn_.loc).format("pattern is already defined");
                 return false;
             }
@@ -106,9 +106,8 @@ bool Parser::parse() {
                 // Parse start conditions
                 while (true) {
                     if ((tt = lex()) == parser_detail::tt_id) {
-                        auto sc_it = std::find(start_conditions_.begin(), start_conditions_.end(),
-                                               std::get<std::string_view>(tkn_.val));
-                        if (sc_it == start_conditions_.end()) {
+                        auto [sc_it, found] = util::find(start_conditions_, std::get<std::string_view>(tkn_.val));
+                        if (!found) {
                             logger::error(*this, tkn_.loc).format("undefined start condition");
                             return false;
                         }
@@ -268,8 +267,8 @@ std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
                     node_stack.emplace_back(std::make_unique<SymbSetNode>(std::get<ValueSet>(tkn_.val)));
                 } break;
                 case parser_detail::tt_id: {  // Insert subtree
-                    auto pat_it = definitions_.find(std::get<std::string_view>(tkn_.val));
-                    if (pat_it == definitions_.end()) {
+                    auto [pat_it, found] = util::find(definitions_, std::get<std::string_view>(tkn_.val));
+                    if (!found) {
                         logger::error(*this, tkn_.loc).format("undefined regular expression");
                         return {nullptr, tt};
                     }
@@ -345,13 +344,13 @@ int Parser::lex() {
             case lex_detail::pat_escape_v: escape = '\v'; break;
             case lex_detail::pat_escape_other: escape = lexeme[1]; break;
             case lex_detail::pat_escape_hex: {
-                escape = hdig(lexeme[2]);
-                if (llen > 3) { *escape = (*escape << 4) + hdig(lexeme[3]); }
+                escape = util::dig_v<16>(lexeme[2]);
+                if (llen > 3) { *escape = (*escape << 4) + util::dig_v<16>(lexeme[3]); }
             } break;
             case lex_detail::pat_escape_oct: {
-                escape = dig(lexeme[1]);
-                if (llen > 2) { *escape = (*escape << 3) + dig(lexeme[2]); }
-                if (llen > 3) { *escape = (*escape << 3) + dig(lexeme[3]); }
+                escape = util::dig_v<8>(lexeme[1]);
+                if (llen > 2) { *escape = (*escape << 3) + util::dig_v<8>(lexeme[2]); }
+                if (llen > 3) { *escape = (*escape << 3) + util::dig_v<8>(lexeme[3]); }
             } break;
 
             // ------ strings
@@ -431,7 +430,7 @@ int Parser::lex() {
             // ------ integer number
             case lex_detail::pat_num: {
                 unsigned num = 0;
-                for (unsigned n = 0; n < llen; ++n) { num = 10 * num + dig(lexeme[n]); }
+                for (unsigned n = 0; n < llen; ++n) { num = 10 * num + util::dig_v<10>(lexeme[n]); }
                 tkn_.val = num;
                 return parser_detail::tt_num;
             } break;
