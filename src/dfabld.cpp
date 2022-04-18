@@ -76,7 +76,7 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
             if (type == NodeType::kSymbol) {
                 const auto* symb_node = static_cast<const SymbNode*>(pos_node);
                 return symb_node->getSymbol() == symb ||
-                       (case_insensitive && symb_node->getSymbol() == std::tolower(symb));
+                       (case_insensitive && symb_node->getSymbol() == static_cast<unsigned>(std::tolower(symb)));
             } else if (type == NodeType::kSymbSet) {
                 const auto* sset_node = static_cast<const SymbSetNode*>(pos_node);
                 return sset_node->getSymbSet().contains(symb) ||
@@ -271,7 +271,7 @@ void DfaBuilder::optimize() {
         return group_main_state[state_group[state]];
     };
 
-    auto is_used_state = [&get_main_state](unsigned state) { return get_main_state(state) == state; };
+    auto is_used_state = [&get_main_state](unsigned state) { return get_main_state(state) == static_cast<int>(state); };
 
     // Select new main states
     unsigned new_state_count = 0;
