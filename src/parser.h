@@ -51,7 +51,7 @@ class Parser {
     char* first_ = nullptr;
     char* last_ = nullptr;
     unsigned ln_ = 1, col_ = 1;
-    std::vector<int> state_stack_;
+    util::basic_dynbuffer<int, 1> state_stack_;
     TokenInfo tkn_;
     std::unordered_map<std::string_view, std::string_view> options_;
     std::unordered_map<std::string_view, std::unique_ptr<Node>> definitions_;

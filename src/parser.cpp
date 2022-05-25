@@ -37,9 +37,8 @@ bool Parser::parse() {
     last_ = text_.get() + n_read;
     current_line_ = getNextLine(first_, last_);
 
-    state_stack_.reserve(256);
-
     int tt = 0;
+    state_stack_.reserve_at_curr(256);
     state_stack_.push_back(lex_detail::sc_initial);
 
     // Load definitions
@@ -310,19 +309,34 @@ int Parser::lex() {
     tkn_.loc = {ln_, col_, col_};
 
     while (true) {
+        int pat = 0;
         unsigned llen = 0;
-        const char* lexeme = first_;
-        if (lexeme > text_.get() && *(lexeme - 1) == '\n') {
-            current_line_ = getNextLine(lexeme, last_);
+        const char *first = first_, *lexeme = first;
+        if (first > text_.get() && *(first - 1) == '\n') {
+            current_line_ = getNextLine(first, last_);
             ++ln_, col_ = 1;
             tkn_.loc = {ln_, col_, col_};
         }
-        int pat = lex_detail::lex(lexeme, last_, state_stack_, llen, false);
-        if (pat == lex_detail::err_end_of_input) {
-            int sc = state_stack_.back();
-            tkn_.loc.col_last = tkn_.loc.col_first;
-            if (sc == lex_detail::sc_string || sc == lex_detail::sc_sset) { return parser_detail::tt_unterm_token; }
-            return parser_detail::tt_eof;
+        while (true) {
+            bool stack_limitation = false;
+            const char* last = last_;
+            if (state_stack_.avail() < static_cast<size_t>(last - first)) {
+                last = first + state_stack_.avail();
+                stack_limitation = true;
+            }
+            pat = lex_detail::lex(first, last, state_stack_.p_curr(), &llen, stack_limitation);
+            if (pat >= lex_detail::predef_pat_default) {
+                break;
+            } else if (stack_limitation) {
+                // enlarge state stack and continue analysis
+                state_stack_.reserve_at_curr(llen);
+                first = last;
+            } else {
+                int sc = state_stack_.back();
+                tkn_.loc.col_last = tkn_.loc.col_first;
+                if (sc == lex_detail::sc_string || sc == lex_detail::sc_sset) { return parser_detail::tt_unterm_token; }
+                return parser_detail::tt_eof;
+            }
         }
         first_ += llen, col_ += llen;
         tkn_.loc.col_last = col_ - 1;
