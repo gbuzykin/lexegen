@@ -49,5 +49,3 @@ enum {
     sc_regex_br,
     sc_sc_list,
 };
-
-int lex(const char* first, const char* last, std::vector<int>& state_stack, unsigned& llen, bool has_more);

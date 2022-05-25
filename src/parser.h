@@ -11,7 +11,6 @@
 namespace lex_detail {
 #include "lex_defs.h"
 }
-
 namespace parser_detail {
 #include "parser_defs.h"
 }
@@ -45,19 +44,14 @@ class Parser {
         TokenLoc loc;
     };
 
-    struct InputContext {
-        const char* first = nullptr;
-        const char* last = nullptr;
-        unsigned ln = 1, col = 1;
-    };
-
     util::iobuf& input_;
     std::string file_name_;
     std::unique_ptr<char[]> text_;
     std::string current_line_;
-    char* text_top_ = nullptr;
-    InputContext in_ctx_;
-    std::vector<int> lex_state_stack_;
+    char* first_ = nullptr;
+    char* last_ = nullptr;
+    unsigned ln_ = 1, col_ = 1;
+    std::vector<int> state_stack_;
     TokenInfo tkn_;
     std::unordered_map<std::string_view, std::string_view> options_;
     std::unordered_map<std::string_view, std::unique_ptr<Node>> definitions_;

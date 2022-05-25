@@ -62,18 +62,18 @@ static int lls_list[1] = {
     1
 };
 
-int lex(const char* first, const char* last, std::vector<int>& state_stack, unsigned& llen, bool has_more) {
-    assert(first <= last && last - first >= llen);
+static int lex(const char* first, const char* last, std::vector<int>& state_stack, unsigned& llen, bool has_more) {
+    assert(first <= last);
     enum { kTrailContFlag = 1, kFlagCount = 1 };
     int state = state_stack.back();
-    const char* p = first + llen;
+    const char* first0 = first;
     while (true) {  // Fill buffers till transition is impossible
-        if (p == last) {
+        if (first == last) {
             if (!has_more) { break; }
-            llen = static_cast<unsigned>(p - first);
+            llen += static_cast<unsigned>(first - first0);
             return err_end_of_input;
         }
-        int meta = symb2meta[static_cast<unsigned char>(*p)];
+        int meta = symb2meta[static_cast<unsigned char>(*first)];
         if (meta < 0) { break; }
         do {
             int l = base[state] + meta;
@@ -85,9 +85,10 @@ int lex(const char* first, const char* last, std::vector<int>& state_stack, unsi
         } while (state >= 0);
         if (state < 0) { break; }
         state_stack.push_back(state);
-        ++p;
+        ++first;
     }
-    while (p != first) {  // Unroll downto last accepting state
+    llen += static_cast<unsigned>(first - first0);
+    while (llen != 0) {  // Unroll down-to last accepting state
         int n_pat = accept[state_stack.back()];
         if (n_pat > 0) {
             bool has_trailling_context = n_pat & kTrailContFlag;
@@ -98,19 +99,18 @@ int lex(const char* first, const char* last, std::vector<int>& state_stack, unsi
                     for (int i = lls_idx[state]; i < lls_idx[state + 1]; ++i) {
                         if (lls_list[i] == n_pat) { goto accept_pat; }
                     }
-                    --p;
+                    --llen;
                     state_stack.pop_back();
-                } while (p != first);
+                } while (llen != 0);
             }
         accept_pat:
-            llen = static_cast<unsigned>(p - first);
             state_stack.erase(state_stack.end() - llen, state_stack.end());
             return n_pat;
         }
-        --p;
+        --llen;
         state_stack.pop_back();
     }
-    if (p == last) { return err_end_of_input; }
-    ++p, llen = 1;  // Accept at least one symbol as default pattern
+    if (first == last) { return err_end_of_input; }
+    llen = 1;  // Accept at least one symbol as default pattern
     return predef_pat_default;
 }

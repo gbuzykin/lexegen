@@ -36,5 +36,3 @@ enum {
 enum {
     sc_initial = 0,
 };
-
-int parse(int tt, std::vector<int>& state_stack, unsigned& rlen, int rise_error);
