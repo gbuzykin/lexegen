@@ -22,7 +22,7 @@ static int goto_list[20] = {
     -1, 0, 4, 9, 11, 14, 12, 13, -1, 1, -1, 2, 2, 30, -1, 3, -1, 21, -1, 19
 };
 
-int parse(int tt, std::vector<int>& state_stack, unsigned& rlen, int rise_error) {
+static int parse(int tt, std::vector<int>& state_stack, unsigned& rlen, int rise_error) {
     enum { kShiftFlag = 1, kFlagCount = 1 };
     int action = rise_error;
     if (action >= 0) {

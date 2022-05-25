@@ -1,7 +1,7 @@
 # Regular Expression Based Lexical Analyzer Generator
 
 This tool generates lexical analyzer upon a list of pattern descriptions in terms of regular
-expressions as an input.  Its input file is very similar to input of standard
+expressions as an input.  Its input file is very similar to the input of standard
 [lex](https://en.wikipedia.org/wiki/Lex_(software)) tool by structure and syntax.  But contrary to
 *lex* instead of generating full analyzer with pattern matching inlined handlers `lexegen` generates
 only tables and pattern matching C++-function as files, which can be included into the rest
@@ -100,11 +100,13 @@ is needed to specify the names explicitly the following should be issued:
 ```
 
 File `lex_defs.h` contains numerical identifiers for patterns and start conditions (or start
-analyzer state).  Only one `sc_initial` start condition is defined for our example.  The prototype
-of the analyzer function is also defined in this file as
+analyzer state).  Only one `sc_initial` start condition is defined for our example.
+
+File `lex_analyzer.inl` contains necessary tables and `lex()` function implementation, defined as
+`static`.  This function has the following prototype:
 
 ```cpp
-int lex(const char* first, const char* last, std::vector<int>& state_stack, unsigned& llen, bool has_more);
+static int lex(const char* first, const char* last, std::vector<int>& state_stack, unsigned& llen, bool has_more);
 ```
 
 where:
@@ -129,13 +131,12 @@ notes:
 
 3. If `has_more` is `true`, in case of reaching the end of input buffer the analyzer leaves
    `state_stack` as it is and returns `err_end_of_input`.  It gives a chance to add more characters
-   to the input sequence and call the `lex()` function again to continue the analysis.  The input
-   buffer is allowed to be reallocated, but already analyzed part (of length `llen`) of the input
-   buffer must be retained.
+   to the input sequence and call the `lex()` function again to continue the analysis.  Already
+   analyzed part of input is no more needed.  All necessary information is in state stack.  Old
+   input buffer can be freed (in theory, but it will likely be needed in future to concatenate the
+   full lexeme).
 
 4. Hint: it is convenient to use the `state_stack` stack also as start condition (state) stack.
-
-File `lex_analyzer.inl` contains necessary tables and `lex()` function implementation.
 
 Summing this up, the simplest user's code can be something like this:
 
@@ -176,7 +177,7 @@ int main() {
 
 ## How to Build `lexegen`
 
-Perform this steps to build the project (in linux, for other platforms the steps are similar):
+Perform these steps to build the project (in linux, for other platforms the steps are similar):
 
 1. Clone `lexegen` repository and enter it
 
