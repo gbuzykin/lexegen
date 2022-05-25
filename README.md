@@ -105,43 +105,77 @@ analyzer state).  Only one `sc_initial` start condition is defined for our examp
 File `lex_analyzer.inl` contains necessary tables and `lex()` function implementation, defined as
 `static`.  This function has the following prototype:
 
-```cpp
-static int lex(const char* first, const char* last, std::vector<int>& state_stack, unsigned& llen, bool has_more);
+```c
+static int lex(const char* first, const char* last, int** p_sptr, unsigned* p_llen, int has_more);
 ```
 
 where:
 
 - `first` - pointer to the first character of input buffer
 - `last` - pointer to the character after the last character of input buffer
-- `state_stack` - reference to user-provided `std::vector<int>` used as the analyzer's DFA stack
-- `llen` - where to save matched text length
-- `has_more` - should be `false` to treat the end of input buffer as the end of input sequence
+- `p_sptr` - pointer to current user-provided DFA stack pointer
+- `p_llen` - pointer to current matched lexeme length
+- `has_more` - should be `0` to treat the end of input buffer as the end of input sequence
 
 returns: matched pattern identifier
 
 notes:
 
-1. The starting state must be on the top of `state_stack` before calling `lex()`.
+1. The starting state must be on the top of user-provided DFA stack before calling `lex()`.  Current
+   stack pointer `*p_sptr` must point to the position *after* initial state (the first free stack
+   cell)
 
-2. After the function returns and the pattern is matched the state of `state_stack` in the same as
-   before calling the function.  In case if `has_more` is `false` the state of `state_stack` is
+2. After the function returns and the pattern is matched the stack pointer `*p_sptr` in the same as
+   before calling the function.  In case if `has_more` is `0` the stack pointer `*p_sptr` is
    *always* the same as before the calling.  The function matches at least one character from the
-   input buffer (returns `predef_pat_default` if no user-provided pattern is matched), and returns
-   `err_end_of_input` if input buffer is empty.
+   input buffer (returns `predef_pat_default (== 0)` if no user-provided pattern is matched), and
+   returns `err_end_of_input` (negative) if input buffer is empty.
 
-3. If `has_more` is `true`, in case of reaching the end of input buffer the analyzer leaves
-   `state_stack` as it is and returns `err_end_of_input`.  It gives a chance to add more characters
-   to the input sequence and call the `lex()` function again to continue the analysis.  Already
-   analyzed part of input is no more needed.  All necessary information is in state stack.  Old
-   input buffer can be freed (in theory, but it will likely be needed in future to concatenate the
-   full lexeme).
+3. If `has_more` is `!= 0`, in case of reaching the end of input buffer the analyzer leaves the
+   stack pointer `*p_sptr` as it is and returns `err_end_of_input`.  It gives a chance to add more
+   characters to the input sequence and call the `lex()` function again to continue the analysis.
+   Already analyzed part of input is no more needed.  All necessary information is in state stack.
+   Old input buffer can be freed (in theory, but it will likely be needed in future to concatenate
+   the full lexeme).
 
-4. Hint: it is convenient to use the `state_stack` stack also as start condition (state) stack.
+4. User-provided DFA stack must have the same count of free cells as the length of the longest
+   possible lexeme, or `last - first` if we must deal with lexemes of arbitrary length.  The other
+   approach is to trim input buffer in case if it is longer than free range in user-provided DFA
+   stack and to facilitate `has_more` flag.  The code will look like this:
+
+    ```c
+        auto state_stack = std::make_unique<int[]>(kInitialStackSize);
+        int* slast = state_stack.data() + kInitialStackSize;
+        int* sptr = state_stack.data();
+        *sptr++ = lex_detail::sc_initial;
+        ...
+        const char* trimmed_first = first;
+        while (true) {
+            bool stack_limitation = false;
+            const char* trimmed_last = last;
+            if (slast - sptr < last - trimmed_first) {
+                trimmed_last = first + std::distance(sptr, slast);
+                stack_limitation = true;
+            }
+            int pat = lex_detail::lex(trimmed_first, trimmed_last, &sptr, llen, stack_limitation);
+            if (pat >= lex_detail::predef_pat_default) {
+                break; // the full lexeme is obtained
+            } else if (stack_limitation) {
+                // enlarge state stack and continue analysis
+                <... enlarge state stack ...>
+                trimmed_first = trimmed_last;
+            } else {
+                <...  end of sequence ...>
+            }
+        }
+        ...
+    ```
+
+5. Hint: it is convenient to use the state stack also as start condition stack as well.
 
 Summing this up, the simplest user's code can be something like this:
 
 ```cpp
-#include <vector>
 ...
 namespace lex_detail {
 #include "lex_defs.h"
@@ -154,14 +188,32 @@ int main() {
     const char* last = .... ; // after the last char
     ...
     unsigned llen = 0;
-    std::vector<int> state_stack;
-    state_stack.reserve(256);
-    state_stack.push_back(lex_detail::sc_initial);
+    auto state_stack = std::make_unique<int[]>(kInitialStackSize);
+    int* slast = state_stack.data() + kInitialStackSize;
+    int* sptr = state_stack.data();
+    *sptr++ = lex_detail::sc_initial;
     ...
     while (true) {
         first += llen;
-        int pat = lex_detail::lex(first, last, state_stack, llen, false);
-        if (pat == lex_detail::err_end_of_input) { break; } // end of sequence
+        const char* trimmed_first = first;
+        while (true) {
+            bool stack_limitation = false;
+            const char* trimmed_last = last;
+            if (slast - sptr < last - trimmed_first) {
+                trimmed_last = trimmed_first + std::distance(sptr, slast);
+                stack_limitation = true;
+            }
+            int pat = lex_detail::lex(trimmed_first, trimmed_last, &sptr, llen, stack_limitation);
+            if (pat >= lex_detail::predef_pat_default) {
+                break; // the full lexeme is obtained
+            } else if (stack_limitation) {
+                // enlarge state stack and continue analysis
+                <... enlarge state stack ...>
+                trimmed_first = trimmed_last;
+            } else {
+                return; // end of sequence
+           }
+        }
         switch (pat) {
         lex_detail::pat_comment: .....; break;
         lex_detail::pat_string: .....; break;

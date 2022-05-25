@@ -62,17 +62,11 @@ static int lls_list[1] = {
     1
 };
 
-static int lex(const char* first, const char* last, std::vector<int>& state_stack, unsigned& llen, bool has_more) {
-    assert(first <= last);
+static int lex(const char* first, const char* last, int** p_sptr, unsigned* p_llen, int has_more) {
     enum { kTrailContFlag = 1, kFlagCount = 1 };
-    int state = state_stack.back();
-    const char* first0 = first;
-    while (true) {  // Fill buffers till transition is impossible
-        if (first == last) {
-            if (!has_more) { break; }
-            llen += static_cast<unsigned>(first - first0);
-            return err_end_of_input;
-        }
+    int *sptr = *p_sptr, *sptr0 = sptr - *p_llen;
+    int state = *(sptr - 1);
+    while (first < last) {  // Analyze till transition is impossible
         int meta = symb2meta[static_cast<unsigned char>(*first)];
         do {
             int l = base[state] + meta;
@@ -82,34 +76,39 @@ static int lex(const char* first, const char* last, std::vector<int>& state_stac
             }
             state = def[state];
         } while (state >= 0);
-        if (state < 0) { break; }
-        state_stack.push_back(state);
-        ++first;
+        if (state < 0) { goto unroll; }
+        *sptr++ = state, ++first;
     }
-    llen += static_cast<unsigned>(first - first0);
-    while (llen != 0) {  // Unroll down-to last accepting state
-        int n_pat = accept[state_stack.back()];
+    if (has_more || sptr == sptr0) {
+        *p_sptr = sptr;
+        *p_llen = static_cast<unsigned>(sptr - sptr0);
+        return err_end_of_input;
+    }
+unroll:
+    *p_sptr = sptr0;
+    while (sptr != sptr0) {  // Unroll down-to last accepting state
+        state = *(sptr - 1);
+        int n_pat = accept[state];
         if (n_pat > 0) {
-            bool has_trailling_context = n_pat & kTrailContFlag;
-            n_pat >>= kFlagCount;
-            if (has_trailling_context) {
-                do {
-                    state = state_stack.back();
-                    for (int i = lls_idx[state]; i < lls_idx[state + 1]; ++i) {
-                        if (lls_list[i] == n_pat) { goto accept_pat; }
-                    }
-                    --llen;
-                    state_stack.pop_back();
-                } while (llen != 0);
+            if (!(n_pat & kTrailContFlag)) {
+                *p_llen = static_cast<unsigned>(sptr - sptr0);
+                return n_pat >> kFlagCount;
             }
-        accept_pat:
-            state_stack.erase(state_stack.end() - llen, state_stack.end());
+            n_pat >>= kFlagCount;
+            do {
+                for (int i = lls_idx[state]; i < lls_idx[state + 1]; ++i) {
+                    if (lls_list[i] == n_pat) {
+                        *p_llen = static_cast<unsigned>(sptr - sptr0);
+                        return n_pat;
+                    }
+                }
+                state = *(--sptr - 1);
+            } while (sptr != sptr0);
+            *p_llen = static_cast<unsigned>(sptr - sptr0);
             return n_pat;
         }
-        --llen;
-        state_stack.pop_back();
+        --sptr;
     }
-    if (first == last) { return err_end_of_input; }
-    llen = 1;  // Accept at least one symbol as default pattern
+    *p_llen = 1;  // Accept at least one symbol as default pattern
     return predef_pat_default;
 }
