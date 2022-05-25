@@ -77,18 +77,18 @@ Building lexer...
  - pattern count: 7
  - S-state count: 1
  - position count: 44
- - meta-symbol count: 12
+ - meta-symbol count: 13
  - state count: 24
- - transition table size: 1152 bytes
+ - transition table size: 1248 bytes
 Done.
 Optimizing states...
  - state group count: 19
  - dead group count: 0
  - new state count: 19
- - transition table size: 912 bytes
+ - transition table size: 988 bytes
 Done.
 Compressing tables...
- - total compressed transition table size: 648 bytes
+ - total compressed transition table size: 656 bytes
 Done.
 ```
 

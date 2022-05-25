@@ -46,10 +46,9 @@ void outputLexEngine(util::iobuf& outp, bool no_compress) {
         "            llen += static_cast<unsigned>(first - first0);",
         "            return err_end_of_input;",
         "        }",
-        "        int meta = symb2meta[static_cast<unsigned char>(*first)];",
-        "        if (meta < 0) { break; }",
     };
     static constexpr std::string_view text1[] = {
+        "        int meta = symb2meta[static_cast<unsigned char>(*first)];",
         "        do {",
         "            int l = base[state] + meta;",
         "            if (check[l] == state) {",
@@ -60,7 +59,7 @@ void outputLexEngine(util::iobuf& outp, bool no_compress) {
         "        } while (state >= 0);",
     };
     static constexpr std::string_view text1_no_compress[] = {
-        "        state = Dtran[state][meta];",
+        "        state = Dtran[state][symb2meta[static_cast<unsigned char>(*first)]];",
     };
     static constexpr std::string_view text2[] = {
         "        if (state < 0) { break; }",
