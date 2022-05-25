@@ -119,11 +119,12 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
 
     // Build `symb->meta` table
     symb2meta_.resize(kSymbCount);
-    for (unsigned symb = 0; symb < kSymbCount; ++symb) {
+    symb2meta_[0] = meta_count_++;  // '\0' is always a dead symbol
+    for (unsigned symb = 1; symb < kSymbCount; ++symb) {
         if (case_insensitive && std::islower(symb)) {
             symb2meta_[symb] = symb2meta_[std::toupper(symb)];
         } else if (is_dead_symb(symb)) {
-            symb2meta_[symb] = -1;
+            symb2meta_[symb] = 0;
         } else if (unsigned equiv = get_equiv_symb(symb); equiv < symb) {
             symb2meta_[symb] = symb2meta_[equiv];
         } else {
@@ -134,7 +135,8 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
     // Replace symbol codes with meta codes in Dtran
     for (auto& T : Dtran_) {
         int meta = 0;
-        for (unsigned symb = 0; symb < kSymbCount; ++symb) {
+        T[meta++] = T[0];
+        for (unsigned symb = 1; symb < kSymbCount; ++symb) {
             if (symb2meta_[symb] >= meta) { T[meta++] = T[symb]; }
         }
     }
