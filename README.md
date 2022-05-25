@@ -79,16 +79,16 @@ Building lexer...
  - position count: 44
  - meta-symbol count: 13
  - state count: 24
- - transition table size: 1248 bytes
+ transition table size: 1248 bytes
 Done.
 Optimizing states...
  - state group count: 19
  - dead group count: 0
  - new state count: 19
- - transition table size: 988 bytes
+ transition table size: 988 bytes
 Done.
 Compressing tables...
- - total compressed transition table size: 656 bytes
+ total compressed transition table size: 656 bytes
 Done.
 ```
 
@@ -225,6 +225,24 @@ int main() {
         }
     }
 }
+```
+
+## Command Line Options
+
+```bash
+$ ./lexegen --help
+Usage: lexegen [options] file
+Options:
+    -o <file>                Place the output analyzer into <file>.
+    -h <file>                Place the output definitions into <file>.
+    --no-case                Build case insensitive analyzer.
+    --compress0              Do not compress analyzer table, do not use `meta` table.
+    --compress1              Do not compress analyzer table.
+    --compress2              Default compression.
+    --use-int8-if-possible   Use `int8_t` instead of `int` for states if state count is < 128.
+    -O0                      Do not optimize analyzer states.
+    -O1                      Default analyzer optimization.
+    --help                   Display this information.
 ```
 
 ## How to Build `lexegen`
