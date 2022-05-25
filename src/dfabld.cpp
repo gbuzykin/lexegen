@@ -23,8 +23,6 @@ bool DfaBuilder::isPatternWithTrailCont(unsigned n_pat) const {
 }
 
 void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
-    util::stdbuf::out.write("\033[1;34mBuilding lexer...\033[0m").endl();
-
     std::vector<PositionalNode*> positions;
     std::vector<ValueSet> states;
     sc_count_ = sc_count;
@@ -173,13 +171,9 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
 
     util::println(" - meta-symbol count: {}", meta_count_);
     util::println(" - state count: {}", Dtran_.size());
-    util::println(" - transition table size: {} bytes", meta_count_ * Dtran_.size() * sizeof(int));
-    util::stdbuf::out.write("\033[0;32mDone.\033[0m").endl();
 }
 
 void DfaBuilder::optimize() {
-    util::stdbuf::out.write("\033[1;34mOptimizing states...\033[0m").endl();
-
     std::vector<unsigned> state_group(Dtran_.size());
     std::vector<int> group_main_state;
     group_main_state.reserve(Dtran_.size());
@@ -298,14 +292,10 @@ void DfaBuilder::optimize() {
     lls_.resize(new_state_count);
 
     util::println(" - new state count: {}", Dtran_.size());
-    util::println(" - transition table size: {} bytes", meta_count_ * Dtran_.size() * sizeof(int));
-    util::stdbuf::out.write("\033[0;32mDone.\033[0m").endl();
 }
 
 void DfaBuilder::makeCompressedDtran(std::vector<int>& def, std::vector<int>& base, std::vector<int>& next,
                                      std::vector<int>& check) const {
-    util::stdbuf::out.write("\033[1;34mCompressing tables...\033[0m").endl();
-
     assert(!Dtran_.empty());
     def.resize(Dtran_.size());
     base.resize(Dtran_.size());
@@ -405,8 +395,4 @@ void DfaBuilder::makeCompressedDtran(std::vector<int>& def, std::vector<int>& ba
             if (check[l] < 0) { next[l] = Dtran_[state][meta], check[l] = state; }
         }
     }
-
-    util::println(" - total compressed transition table size: {} bytes",
-                  (def.size() + base.size() + next.size() + check.size()) * sizeof(int));
-    util::stdbuf::out.write("\033[0;32mDone.\033[0m").endl();
 }
