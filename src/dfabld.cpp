@@ -1,8 +1,9 @@
 #include "dfabld.h"
 
 #include "node.h"
-#include "util/algorithm.h"
-#include "util/format.h"
+
+#include "uxs/algorithm.h"
+#include "uxs/format.h"
 
 #include <cctype>
 #include <unordered_map>
@@ -16,7 +17,7 @@ void DfaBuilder::addPattern(std::unique_ptr<Node> syn_tree, unsigned n_pat, cons
 }
 
 bool DfaBuilder::isPatternWithTrailCont(unsigned n_pat) const {
-    return util::any_of(patterns_, [n_pat](const auto& pat) {
+    return uxs::any_of(patterns_, [n_pat](const auto& pat) {
         return static_cast<const TermNode*>(pat.syn_tree->getRight())->getPatternNo() == n_pat &&
                pat.syn_tree->getLeft()->getType() == NodeType::kTrailCont;
     });
@@ -31,9 +32,9 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
     positions.reserve(1024);
     for (const auto& pat : patterns_) { pat.syn_tree->calcFunctions(positions); }
 
-    util::println(" - pattern count: {}", patterns_.size());
-    util::println(" - S-state count: {}", sc_count_);
-    util::println(" - position count: {}", positions.size());
+    uxs::println(" - pattern count: {}", patterns_.size());
+    uxs::println(" - S-state count: {}", sc_count_);
+    uxs::println(" - position count: {}", positions.size());
 
     auto calc_eps_closure = [&positions](const ValueSet& T) {
         ValueSet closure = T;
@@ -95,7 +96,7 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
 
             if (!U.empty()) {
                 auto U_closure = calc_eps_closure(U);
-                if (auto [it, found] = util::find(states, U_closure); found) {
+                if (auto [it, found] = uxs::find(states, U_closure); found) {
                     Dtran_[T_idx][symb] = static_cast<unsigned>(it - states.begin());
                 } else {
                     pending_states.push_back(Dtran_[T_idx][symb] = add_state(U_closure));
@@ -105,12 +106,12 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
     } while (pending_states.size() > 0);
 
     auto is_dead_symb = [&Dtran = Dtran_](unsigned s) {
-        return util::all_of(Dtran, [s](const auto& T) { return T[s] == -1; });
+        return uxs::all_of(Dtran, [s](const auto& T) { return T[s] == -1; });
     };
 
     auto get_equiv_symb = [&Dtran = Dtran_](unsigned s) {
         for (unsigned s2 = 0; s2 < s; ++s2) {
-            if (util::all_of(Dtran, [s, s2](const auto& T) { return T[s] == T[s2]; })) { return s2; }
+            if (uxs::all_of(Dtran, [s, s2](const auto& T) { return T[s] == T[s2]; })) { return s2; }
         }
         return s;
     };
@@ -169,8 +170,8 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
         lls_.emplace_back(get_lls_patterns(T));
     }
 
-    util::println(" - meta-symbol count: {}", meta_count_);
-    util::println(" - state count: {}", Dtran_.size());
+    uxs::println(" - meta-symbol count: {}", meta_count_);
+    uxs::println(" - state count: {}", Dtran_.size());
 }
 
 void DfaBuilder::optimize() {
@@ -225,7 +226,7 @@ void DfaBuilder::optimize() {
     unsigned group_count = static_cast<unsigned>(
         std::count_if(group_main_state.begin(), group_main_state.end(), [](int state) { return state >= 0; }));
 
-    util::println(" - state group count: {}", group_count);
+    uxs::println(" - state group count: {}", group_count);
 
     auto is_dead_group = [&state_group, &group_main_state, meta_count = meta_count_, &Dtran = Dtran_,
                           &accept = accept_](unsigned group) {
@@ -261,7 +262,7 @@ void DfaBuilder::optimize() {
         }
     }
 
-    util::println(" - dead group count: {}", dead_group_count);
+    uxs::println(" - dead group count: {}", dead_group_count);
 
     auto get_main_state = [&state_group, &group_main_state](unsigned state) {
         return group_main_state[state_group[state]];
@@ -291,7 +292,7 @@ void DfaBuilder::optimize() {
     accept_.resize(new_state_count);
     lls_.resize(new_state_count);
 
-    util::println(" - new state count: {}", Dtran_.size());
+    uxs::println(" - new state count: {}", Dtran_.size());
 }
 
 void DfaBuilder::makeCompressedDtran(std::vector<int>& def, std::vector<int>& base, std::vector<int>& next,

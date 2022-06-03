@@ -1,15 +1,16 @@
 #include "dfabld.h"
 #include "node.h"
 #include "parser.h"
-#include "util/io/filebuf.h"
+
+#include "uxs/io/filebuf.h"
 
 template<typename Iter>
-void outputData(util::iobuf& outp, Iter from, Iter to, size_t ntab = 0) {
+void outputData(uxs::iobuf& outp, Iter from, Iter to, size_t ntab = 0) {
     if (from == to) { return; }
     const unsigned length_limit = 120;
-    std::string tab(ntab, ' '), line = tab + util::to_string(*from);
+    std::string tab(ntab, ' '), line = tab + uxs::to_string(*from);
     while (++from != to) {
-        auto sval = util::to_string(*from);
+        auto sval = uxs::to_string(*from);
         if (line.length() + sval.length() + 3 > length_limit) {
             outp.write(line).put(',').endl();
             line = tab + sval;
@@ -21,13 +22,13 @@ void outputData(util::iobuf& outp, Iter from, Iter to, size_t ntab = 0) {
 }
 
 template<typename Iter>
-void outputArray(util::iobuf& outp, std::string_view state_type, std::string_view array_name, Iter from, Iter to) {
+void outputArray(uxs::iobuf& outp, std::string_view state_type, std::string_view array_name, Iter from, Iter to) {
     outp.endl();
-    util::fprint(outp, "static {} {}", state_type, array_name);
+    uxs::fprint(outp, "static {} {}", state_type, array_name);
     if (from == to) {
         outp.write("[1] = { 0 };").endl();
     } else {
-        util::fprintln(outp, "[{}] = {{", std::distance(from, to));
+        uxs::fprintln(outp, "[{}] = {{", std::distance(from, to));
         outputData(outp, from, to, 4);
         outp.write("};").endl();
     }
@@ -39,7 +40,7 @@ struct EngineInfo {
     std::string_view state_type;
 };
 
-void outputLexEngine(util::iobuf& outp, const EngineInfo& info) {
+void outputLexEngine(uxs::iobuf& outp, const EngineInfo& info) {
     // clang-format off
     static constexpr std::string_view text0[] = {
         "static int lex(const char* first, const char* last, {}** p_sptr, unsigned* p_llen, int has_more) {{",
@@ -117,19 +118,19 @@ void outputLexEngine(util::iobuf& outp, const EngineInfo& info) {
     };
     // clang-format on
     outp.endl();
-    for (const auto& l : text0) { util::fprintln(outp, l, info.state_type); }
+    for (const auto& l : text0) { uxs::fprintln(outp, l, info.state_type); }
     if (info.compress_level == 0) {
-        for (const auto& l : text1_compress0) { util::fprintln(outp, l, info.state_type); }
+        for (const auto& l : text1_compress0) { uxs::fprintln(outp, l, info.state_type); }
     } else if (info.compress_level == 1) {
-        for (const auto& l : text1_compress1) { util::fprintln(outp, l, info.state_type); }
+        for (const auto& l : text1_compress1) { uxs::fprintln(outp, l, info.state_type); }
     } else {
-        for (const auto& l : text1) { util::fprintln(outp, l, info.state_type); }
+        for (const auto& l : text1) { uxs::fprintln(outp, l, info.state_type); }
     }
-    for (const auto& l : text2) { util::fprintln(outp, l, info.state_type); }
+    for (const auto& l : text2) { uxs::fprintln(outp, l, info.state_type); }
     if (info.any_has_trail_context) {
-        for (const auto& l : text3_any_has_trail_context) { util::fprintln(outp, l, info.state_type); }
+        for (const auto& l : text3_any_has_trail_context) { uxs::fprintln(outp, l, info.state_type); }
     } else {
-        for (const auto& l : text3) { util::fprintln(outp, l, info.state_type); }
+        for (const auto& l : text3) { uxs::fprintln(outp, l, info.state_type); }
     }
 }
 
@@ -179,7 +180,7 @@ int main(int argc, char** argv) {
                     "    --help                   Display this information.",
                 };
                 // clang-format on
-                for (const auto& l : text) { util::stdbuf::out.write(l).endl(); }
+                for (const auto& l : text) { uxs::stdbuf::out.write(l).endl(); }
                 return 0;
             } else if (arg[0] != '-') {
                 input_file_name = arg;
@@ -194,7 +195,7 @@ int main(int argc, char** argv) {
             return -1;
         }
 
-        util::filebuf ifile(input_file_name.c_str(), "r");
+        uxs::filebuf ifile(input_file_name.c_str(), "r");
         if (!ifile) {
             logger::fatal().format("could not open input file `{}`", input_file_name);
             return -1;
@@ -213,7 +214,7 @@ int main(int argc, char** argv) {
         }
 
         // Build lexer
-        util::stdbuf::out.write("\033[1;34mBuilding lexer...\033[0m").endl();
+        uxs::stdbuf::out.write("\033[1;34mBuilding lexer...\033[0m").endl();
         dfa_builder.build(static_cast<unsigned>(start_conditions.size()), case_insensitive);
 
         size_t state_sz = sizeof(int);
@@ -223,12 +224,12 @@ int main(int argc, char** argv) {
             eng_info.state_type = "int", state_sz = sizeof(int);
         }
 
-        util::println(" transition table size: {} bytes",
-                      dfa_builder.getMetaCount() * dfa_builder.getDtran().size() * state_sz);
-        util::stdbuf::out.write("\033[0;32mDone.\033[0m").endl();
+        uxs::println(" transition table size: {} bytes",
+                     dfa_builder.getMetaCount() * dfa_builder.getDtran().size() * state_sz);
+        uxs::stdbuf::out.write("\033[0;32mDone.\033[0m").endl();
 
         if (optimization_level > 0) {
-            util::stdbuf::out.write("\033[1;34mOptimizing states...\033[0m").endl();
+            uxs::stdbuf::out.write("\033[1;34mOptimizing states...\033[0m").endl();
             dfa_builder.optimize();
 
             if (use_int8_if_possible && dfa_builder.getDtran().size() < 128) {
@@ -237,24 +238,24 @@ int main(int argc, char** argv) {
                 eng_info.state_type = "int", state_sz = sizeof(int);
             }
 
-            util::println(" transition table size: {} bytes",
-                          dfa_builder.getMetaCount() * dfa_builder.getDtran().size() * state_sz);
-            util::stdbuf::out.write("\033[0;32mDone.\033[0m").endl();
+            uxs::println(" transition table size: {} bytes",
+                         dfa_builder.getMetaCount() * dfa_builder.getDtran().size() * state_sz);
+            uxs::stdbuf::out.write("\033[0;32mDone.\033[0m").endl();
         }
 
-        if (util::filebuf ofile(defs_file_name.c_str(), "w"); ofile) {
+        if (uxs::filebuf ofile(defs_file_name.c_str(), "w"); ofile) {
             ofile.write("// Lexegen autogenerated definition file - do not edit!").endl();
             ofile.endl().write("enum {").endl();
             ofile.write("    err_end_of_input = -1,").endl();
             ofile.write("    predef_pat_default = 0,").endl();
-            for (size_t i = 0; i < patterns.size(); ++i) { util::fprintln(ofile, "    pat_{},", patterns[i].id); }
+            for (size_t i = 0; i < patterns.size(); ++i) { uxs::fprintln(ofile, "    pat_{},", patterns[i].id); }
             ofile.write("    total_pattern_count,").endl();
             ofile.write("};").endl();
             if (!start_conditions.empty()) {
                 ofile.endl().write("enum {").endl();
-                util::fprintln(ofile, "    sc_{} = 0,", start_conditions[0]);
+                uxs::fprintln(ofile, "    sc_{} = 0,", start_conditions[0]);
                 for (size_t i = 1; i < start_conditions.size(); ++i) {
-                    util::fprintln(ofile, "    sc_{},", start_conditions[i]);
+                    uxs::fprintln(ofile, "    sc_{},", start_conditions[i]);
                 }
                 ofile.write("};").endl();
             }
@@ -262,7 +263,7 @@ int main(int argc, char** argv) {
             logger::error().format("could not open output file `{}`", defs_file_name);
         }
 
-        if (util::filebuf ofile(analyzer_file_name.c_str(), "w"); ofile) {
+        if (uxs::filebuf ofile(analyzer_file_name.c_str(), "w"); ofile) {
             ofile.write("// Lexegen autogenerated analyzer file - do not edit!").endl();
             const auto& symb2meta = dfa_builder.getSymb2Meta();
             const auto& Dtran = dfa_builder.getDtran();
@@ -271,8 +272,8 @@ int main(int argc, char** argv) {
                 if (eng_info.compress_level < 2) {
                     if (!Dtran.empty()) {
                         ofile.endl();
-                        util::fprintln(ofile, "static {} Dtran[{}][{}] = {{", eng_info.state_type, Dtran.size(),
-                                       dfa_builder.getMetaCount());
+                        uxs::fprintln(ofile, "static {} Dtran[{}][{}] = {{", eng_info.state_type, Dtran.size(),
+                                      dfa_builder.getMetaCount());
                         for (size_t j = 0; j < Dtran.size(); ++j) {
                             ofile.write(j == 0 ? "    {" : ", {").endl();
                             outputData(ofile, Dtran[j].begin(), Dtran[j].begin() + dfa_builder.getMetaCount(), 8);
@@ -282,12 +283,12 @@ int main(int argc, char** argv) {
                     }
                 } else {
                     std::vector<int> def, base, next, check;
-                    util::stdbuf::out.write("\033[1;34mCompressing tables...\033[0m").endl();
+                    uxs::stdbuf::out.write("\033[1;34mCompressing tables...\033[0m").endl();
                     dfa_builder.makeCompressedDtran(def, base, next, check);
 
-                    util::println(" total compressed transition table size: {} bytes",
-                                  (def.size() + next.size() + check.size()) * state_sz + base.size() * sizeof(int));
-                    util::stdbuf::out.write("\033[0;32mDone.\033[0m").endl();
+                    uxs::println(" total compressed transition table size: {} bytes",
+                                 (def.size() + next.size() + check.size()) * state_sz + base.size() * sizeof(int));
+                    uxs::stdbuf::out.write("\033[0;32mDone.\033[0m").endl();
 
                     outputArray(ofile, eng_info.state_type, "def", def.begin(), def.end());
                     outputArray(ofile, "int", "base", base.begin(), base.end());
@@ -296,7 +297,7 @@ int main(int argc, char** argv) {
                 }
             } else if (!Dtran.empty()) {
                 ofile.endl();
-                util::fprintln(ofile, "static {} Dtran[{}][256] = {{", eng_info.state_type, Dtran.size());
+                uxs::fprintln(ofile, "static {} Dtran[{}][256] = {{", eng_info.state_type, Dtran.size());
                 for (size_t j = 0; j < Dtran.size(); ++j) {
                     std::array<int, 256> Dtran_line;
                     for (int n = 0; n < 256; ++n) { Dtran_line[n] = Dtran[j][symb2meta[n]]; }

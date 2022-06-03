@@ -28,7 +28,7 @@ class Parser {
         std::unique_ptr<Node> syn_tree;
     };
 
-    Parser(util::iobuf& input, std::string file_name);
+    Parser(uxs::iobuf& input, std::string file_name);
     bool parse();
     const std::string& getFileName() const { return file_name_; }
     const std::string& getCurrentLine() const { return current_line_; }
@@ -44,14 +44,14 @@ class Parser {
         TokenLoc loc;
     };
 
-    util::iobuf& input_;
+    uxs::iobuf& input_;
     std::string file_name_;
     std::unique_ptr<char[]> text_;
     std::string current_line_;
     char* first_ = nullptr;
     char* last_ = nullptr;
     unsigned ln_ = 1, col_ = 1;
-    util::basic_dynbuffer<int, 1> state_stack_;
+    uxs::basic_inline_dynbuffer<int, 1> state_stack_;
     TokenInfo tkn_;
     std::unordered_map<std::string_view, std::string_view> options_;
     std::unordered_map<std::string_view, std::unique_ptr<Node>> definitions_;

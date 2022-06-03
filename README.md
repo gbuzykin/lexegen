@@ -256,7 +256,7 @@ Perform these steps to build the project (in linux, for other platforms the step
     cd lexegen
     ```
 
-2. Initialize and update `std-ext` submodule
+2. Initialize and update `uxs` submodule
 
     ```bash
     git submodule update --init
