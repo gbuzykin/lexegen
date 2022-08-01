@@ -150,15 +150,15 @@ bool Parser::parse() {
 std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
     unsigned num[2] = {0, 0}, num_given = 0;
     std::vector<std::unique_ptr<Node>> node_stack;
-    std::vector<int> parser_state_stack;
+    uxs::basic_inline_dynbuffer<int, 1> sstack;
 
     node_stack.reserve(256);
-    parser_state_stack.reserve(256);
+    sstack.reserve_at_curr(256);
 
-    parser_state_stack.push_back(parser_detail::sc_initial);  // Push initial state
+    sstack.push_back(parser_detail::sc_initial);  // Push initial state
     while (true) {
-        unsigned rlen = 0;
-        int act = parser_detail::parse(tt, parser_state_stack, rlen, 0);
+        sstack.reserve_at_curr(1);
+        int act = parser_detail::parse(tt, sstack.first(), sstack.p_curr(), 0);
         if (act < 0) {
             logSyntaxError(tt);
             return {nullptr, tt};
