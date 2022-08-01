@@ -2,6 +2,7 @@
 #include "node.h"
 #include "parser.h"
 
+#include "uxs/algorithm.h"
 #include "uxs/io/filebuf.h"
 
 template<typename Iter>
@@ -12,25 +13,24 @@ void outputData(uxs::iobuf& outp, Iter from, Iter to, size_t ntab = 0) {
     while (++from != to) {
         auto sval = uxs::to_string(*from);
         if (line.length() + sval.length() + 3 > length_limit) {
-            outp.write(line).put(',').endl();
+            outp.write(line).put(',').put('\n');
             line = tab + sval;
         } else {
             line += ", " + sval;
         }
     }
-    outp.write(line).endl();
+    outp.write(line).put('\n');
 }
 
 template<typename Iter>
 void outputArray(uxs::iobuf& outp, std::string_view state_type, std::string_view array_name, Iter from, Iter to) {
-    outp.endl();
-    uxs::fprint(outp, "static {} {}", state_type, array_name);
+    uxs::fprint(outp, "\nstatic {} {}", state_type, array_name);
     if (from == to) {
-        outp.write("[1] = { 0 };").endl();
+        outp.write("[1] = { 0 };\n");
     } else {
         uxs::fprintln(outp, "[{}] = {{", std::distance(from, to));
         outputData(outp, from, to, 4);
-        outp.write("};").endl();
+        outp.write("};\n");
     }
 }
 
@@ -50,87 +50,87 @@ void outputLexEngine(uxs::iobuf& outp, const EngineInfo& info) {
     };
     static constexpr std::string_view text1[] = {
         "        uint8_t meta = symb2meta[static_cast<unsigned char>(*first)];",
-        "        do {{",
+        "        do {",
         "            int l = base[state] + meta;",
-        "            if (check[l] == state) {{",
+        "            if (check[l] == state) {",
         "                state = next[l];",
         "                break;",
-        "            }}",
+        "            }",
         "            state = def[state];",
-        "        }} while (state >= 0);",
+        "        } while (state >= 0);",
     };
     static constexpr std::string_view text1_compress0[] = {
-        "        state = Dtran[state][static_cast<unsigned char>(*first)];",
+        "        state = Dtran[256 * state + static_cast<unsigned char>(*first)];",
     };
     static constexpr std::string_view text1_compress1[] = {
-        "        state = Dtran[state][symb2meta[static_cast<unsigned char>(*first)]];",
+        "        state = Dtran[dtran_width * state + symb2meta[static_cast<unsigned char>(*first)]];",
     };
     static constexpr std::string_view text2[] = {
-        "        if (state < 0) {{ goto unroll; }}",
+        "        if (state < 0) { goto unroll; }",
         "        *sptr++ = state, ++first;",
-        "    }}",
-        "    if (has_more || sptr == sptr0) {{",
+        "    }",
+        "    if (has_more || sptr == sptr0) {",
         "        *p_sptr = sptr;",
         "        *p_llen = static_cast<unsigned>(sptr - sptr0);",
         "        return err_end_of_input;",
-        "    }}",
+        "    }",
         "unroll:",
         "    *p_sptr = sptr0;",
-        "    while (sptr != sptr0) {{  // Unroll down-to last accepting state",
+        "    while (sptr != sptr0) {  // Unroll down-to last accepting state",
         "        state = *(sptr - 1);",
         "        int n_pat = accept[state];",
-        "        if (n_pat > 0) {{",
+        "        if (n_pat > 0) {",
     };
     static constexpr std::string_view text3_any_has_trail_context[] = {
-        "            enum {{ kTrailContFlag = 1, kFlagCount = 1 }};",
-        "            if (!(n_pat & kTrailContFlag)) {{",
+        "            enum { kTrailContFlag = 1, kFlagCount = 1 };",
+        "            if (!(n_pat & kTrailContFlag)) {",
         "                *p_llen = static_cast<unsigned>(sptr - sptr0);",
         "                return n_pat >> kFlagCount;",
-        "            }}",
+        "            }",
         "            n_pat >>= kFlagCount;",
-        "            do {{",
-        "                for (int i = lls_idx[state]; i < lls_idx[state + 1]; ++i) {{",
-        "                    if (lls_list[i] == n_pat) {{",
+        "            do {",
+        "                for (int i = lls_idx[state]; i < lls_idx[state + 1]; ++i) {",
+        "                    if (lls_list[i] == n_pat) {",
         "                        *p_llen = static_cast<unsigned>(sptr - sptr0);",
         "                        return n_pat;",
-        "                    }}",
-        "                }}",
+        "                    }",
+        "                }",
         "                state = *(--sptr - 1);",
-        "            }} while (sptr != sptr0);",
+        "            } while (sptr != sptr0);",
         "            *p_llen = static_cast<unsigned>(sptr - sptr0);",
         "            return n_pat;",
-        "        }}",
+        "        }",
         "        --sptr;",
-        "    }}",
+        "    }",
         "    *p_llen = 1;  // Accept at least one symbol as default pattern",
         "    return predef_pat_default;",
-        "}}",
+        "}",
     };
     static constexpr std::string_view text3[] = {
         "            *p_llen = static_cast<unsigned>(sptr - sptr0);",
         "            return n_pat;",
-        "        }}",
+        "        }",
         "        --sptr;",
-        "    }}",
+        "    }",
         "    *p_llen = 1;  // Accept at least one symbol as default pattern",
         "    return predef_pat_default;",
-        "}}",
+        "}",
     };
     // clang-format on
-    outp.endl();
+    outp.put('\n');
     for (const auto& l : text0) { uxs::fprintln(outp, l, info.state_type); }
     if (info.compress_level == 0) {
-        for (const auto& l : text1_compress0) { uxs::fprintln(outp, l, info.state_type); }
+        for (const auto& l : text1_compress0) { outp.write(l).put('\n'); }
     } else if (info.compress_level == 1) {
-        for (const auto& l : text1_compress1) { uxs::fprintln(outp, l, info.state_type); }
+        for (const auto& l : text1_compress1) { outp.write(l).put('\n'); }
     } else {
-        for (const auto& l : text1) { uxs::fprintln(outp, l, info.state_type); }
+        for (const auto& l : text1) { outp.write(l).put('\n'); }
     }
-    for (const auto& l : text2) { uxs::fprintln(outp, l, info.state_type); }
+    for (const auto& l : text2) { outp.write(l).put('\n'); }
     if (info.any_has_trail_context) {
-        for (const auto& l : text3_any_has_trail_context) { uxs::fprintln(outp, l, info.state_type); }
+        for (const auto& l : text3_any_has_trail_context) { outp.write(l).put('\n'); }
     } else {
-        for (const auto& l : text3) { uxs::fprintln(outp, l, info.state_type); }
+        for (const auto& l : text3) { outp.write(l).put('\n'); }
     }
 }
 
@@ -244,42 +244,41 @@ int main(int argc, char** argv) {
         }
 
         if (uxs::filebuf ofile(defs_file_name.c_str(), "w"); ofile) {
-            ofile.write("// Lexegen autogenerated definition file - do not edit!").endl();
-            ofile.endl().write("enum {").endl();
-            ofile.write("    err_end_of_input = -1,").endl();
-            ofile.write("    predef_pat_default = 0,").endl();
+            ofile.write("// Lexegen autogenerated definition file - do not edit!\n");
+            ofile.write("\nenum {\n");
+            ofile.write("    err_end_of_input = -1,\n");
+            ofile.write("    predef_pat_default = 0,\n");
             for (size_t i = 0; i < patterns.size(); ++i) { uxs::fprintln(ofile, "    pat_{},", patterns[i].id); }
-            ofile.write("    total_pattern_count,").endl();
-            ofile.write("};").endl();
+            ofile.write("    total_pattern_count,\n");
+            ofile.write("};\n");
             if (!start_conditions.empty()) {
-                ofile.endl().write("enum {").endl();
+                ofile.write("\nenum {\n");
                 uxs::fprintln(ofile, "    sc_{} = 0,", start_conditions[0]);
                 for (size_t i = 1; i < start_conditions.size(); ++i) {
                     uxs::fprintln(ofile, "    sc_{},", start_conditions[i]);
                 }
-                ofile.write("};").endl();
+                ofile.write("};\n");
             }
         } else {
             logger::error().format("could not open output file `{}`", defs_file_name);
         }
 
         if (uxs::filebuf ofile(analyzer_file_name.c_str(), "w"); ofile) {
-            ofile.write("// Lexegen autogenerated analyzer file - do not edit!").endl();
+            ofile.write("// Lexegen autogenerated analyzer file - do not edit!\n");
             const auto& symb2meta = dfa_builder.getSymb2Meta();
             const auto& Dtran = dfa_builder.getDtran();
             if (eng_info.compress_level > 0) {
                 outputArray(ofile, "uint8_t", "symb2meta", symb2meta.begin(), symb2meta.end());
                 if (eng_info.compress_level < 2) {
                     if (!Dtran.empty()) {
-                        ofile.endl();
-                        uxs::fprintln(ofile, "static {} Dtran[{}][{}] = {{", eng_info.state_type, Dtran.size(),
-                                      dfa_builder.getMetaCount());
+                        std::vector<int> dtran_data;
+                        int dtran_width = dfa_builder.getMetaCount();
+                        dtran_data.reserve(dtran_width * Dtran.size());
                         for (size_t j = 0; j < Dtran.size(); ++j) {
-                            ofile.write(j == 0 ? "    {" : ", {").endl();
-                            outputData(ofile, Dtran[j].begin(), Dtran[j].begin() + dfa_builder.getMetaCount(), 8);
-                            ofile.write("    }");
+                            std::copy_n(Dtran[j].data(), dtran_width, std::back_inserter(dtran_data));
                         }
-                        ofile.endl().write("};").endl();
+                        uxs::fprintln(ofile, "\nenum {{ dtran_width = {}}};", dtran_width);
+                        outputArray(ofile, eng_info.state_type, "Dtran", dtran_data.begin(), dtran_data.end());
                     }
                 } else {
                     std::vector<int> def, base, next, check;
@@ -296,16 +295,13 @@ int main(int argc, char** argv) {
                     outputArray(ofile, eng_info.state_type, "check", check.begin(), check.end());
                 }
             } else if (!Dtran.empty()) {
-                ofile.endl();
-                uxs::fprintln(ofile, "static {} Dtran[{}][256] = {{", eng_info.state_type, Dtran.size());
+                std::vector<int> dtran_data;
+                dtran_data.reserve(256 * Dtran.size());
                 for (size_t j = 0; j < Dtran.size(); ++j) {
-                    std::array<int, 256> Dtran_line;
-                    for (int n = 0; n < 256; ++n) { Dtran_line[n] = Dtran[j][symb2meta[n]]; }
-                    ofile.write(j == 0 ? "    {" : ", {").endl();
-                    outputData(ofile, Dtran_line.begin(), Dtran_line.end(), 8);
-                    ofile.write("    }");
+                    uxs::transform(symb2meta, std::back_inserter(dtran_data),
+                                   [&row = Dtran[j]](int meta) { return row[meta]; });
                 }
-                ofile.endl().write("};").endl();
+                outputArray(ofile, eng_info.state_type, "Dtran", dtran_data.begin(), dtran_data.end());
             }
 
             std::vector<int> accept = dfa_builder.getAccept();
