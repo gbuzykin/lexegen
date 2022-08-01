@@ -1,10 +1,10 @@
 # Regular Expression Based Lexical Analyzer Generator
 
-This tool generates lexical analyzer upon a list of pattern descriptions in terms of regular
+This tool generates lexical analyzer based on a list of pattern descriptions in terms of regular
 expressions as an input.  Its input file is very similar to the input of standard
 [lex](https://en.wikipedia.org/wiki/Lex_(software)) tool by structure and syntax.  But contrary to
 *lex* instead of generating full analyzer with pattern matching inlined handlers `lexegen` generates
-only tables and pattern matching C++-function as files, which can be included into the rest
+only tables and pattern matching C-compliant function as files, which can be included into the rest
 analyzer's implementation.
 
 This README file briefly describes this tool and can be not up-do-date, it also gives guidelines how
@@ -15,7 +15,7 @@ to use this stuff.  For more detailed information see
 
 Assume that we already have built this tool as `lexegen` executable, and we want to create a simple
 lexical analyzer, which extracts the following tokens from an input buffer: C-identifiers, unsigned
-integers, floating point numbers and C-strings.  Also we want to skip C-comments and white-spaces.
+integers, floating point numbers and C-strings.  Also we want to skip C-comments and whitespace.
 
 Here is a source input file `test.lex` for this analyzer:
 
@@ -42,7 +42,7 @@ id        ({letter}|_)({letter}|{dig}|_)*
 real      (({dig}+(\.{dig}*)?)|(\.{dig}+))((e|E)(\+|\-)?{dig}+)?
 
 # white-space character
-ws        [ \t\n]       
+ws        [ \t\r\n]       
 
 # C-style comment
 comment    \/\* ( [^*\\] | \\(.|\n) | \*+([^*/\\]|\\(.|\n)) )* \*+\/
@@ -143,7 +143,8 @@ notes:
    approach is to trim input buffer in case if it is longer than free range in user-provided DFA
    stack and to facilitate `has_more` flag.  The code will look like this:
 
-    ```c
+    ```cpp
+        unsigned llen = 0;
         auto state_stack = std::make_unique<int[]>(kInitialStackSize);
         int* slast = state_stack.data() + kInitialStackSize;
         int* sptr = state_stack.data();
@@ -154,10 +155,10 @@ notes:
             bool stack_limitation = false;
             const char* trimmed_last = last;
             if (slast - sptr < last - trimmed_first) {
-                trimmed_last = first + std::distance(sptr, slast);
+                trimmed_last = first + static_cast<ptrdiff_t>(sptr, slast);
                 stack_limitation = true;
             }
-            int pat = lex_detail::lex(trimmed_first, trimmed_last, &sptr, llen, stack_limitation);
+            int pat = lex_detail::lex(trimmed_first, trimmed_last, &sptr, &llen, stack_limitation);
             if (pat >= lex_detail::predef_pat_default) {
                 break; // the full lexeme is obtained
             } else if (stack_limitation) {
@@ -171,7 +172,7 @@ notes:
         ...
     ```
 
-5. Hint: it is convenient to use the state stack also as start condition stack as well.
+5. Hint: it is convenient to use the state stack also as a start condition stack.
 
 Summing this up, the simplest user's code can be something like this:
 
@@ -203,7 +204,7 @@ int main() {
                 trimmed_last = trimmed_first + std::distance(sptr, slast);
                 stack_limitation = true;
             }
-            int pat = lex_detail::lex(trimmed_first, trimmed_last, &sptr, llen, stack_limitation);
+            int pat = lex_detail::lex(trimmed_first, trimmed_last, &sptr, &llen, stack_limitation);
             if (pat >= lex_detail::predef_pat_default) {
                 break; // the full lexeme is obtained
             } else if (stack_limitation) {
