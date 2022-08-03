@@ -21,10 +21,15 @@ Here is a source input file `test.lex` for this analyzer:
 
 ```lex
 # This is a simple lexical analyzer.
-# This section describes named regular expression definitions.
-# Each line has the form: <definition-name>  <regex>.
+
+# This section describes named regular expression definitions, which can be
+# expanded in further expressions using `{name}`
+# Each line has the form: <definition-name> <regex>.
 # Note that only end-of-line character terminates each regular expression, so
 # a comment can't be placed on the same line with the expression.
+
+# Start conditions are also can be defined in this section using the form: %start <sc-name>
+# By default only one `initial` start condition is implicitly defined
 
 # a digit
 dig       [0-9]
@@ -53,10 +58,10 @@ string     \" ( [^"\\] | \\(.|\n) )* \"
 %% # section separator
 
 # This section describes patterns as regular expressions.
-# Each line has the form: <pattern-name>  <regex>.
-# The analyzer always tries to match one of patterns to the next longest possible
-# chunk of text. If one or more patterns fit this chunk, then pattern priority is
-# used. The first pattern has the highest priority, and the last has the lowest.
+# Each line has the form: <pattern-name> <regex>,
+# or the form: <pattern-name> <s1, s2, ...> <regex> with start condition list.
+# If start condition list is not specified, the pattern participates in all
+# defined start conditions.
 
 comment     {comment}
 string      {string}
@@ -119,29 +124,32 @@ where:
 
 returns: matched pattern identifier
 
-notes:
+how it works:
 
-1. The starting state must be on the top of user-provided DFA stack before calling `lex()`.  Current
-   stack pointer `*p_sptr` must point to the position *after* initial state (the first free stack
-   cell)
+The analyzer always tries to match one of patterns to the next longest possible chunk of text.  If
+one or more patterns fit this chunk, then pattern priority is used.  The first pattern has the
+highest priority, and the last has the lowest.
 
-2. After the function returns and the pattern is matched the stack pointer `*p_sptr` in the same as
-   before calling the function.  In case if `has_more` is `0` the stack pointer `*p_sptr` is
-   *always* the same as before the calling.  The function matches at least one character from the
-   input buffer (returns `predef_pat_default (== 0)` if no user-provided pattern is matched), and
-   returns `err_end_of_input` (negative) if input buffer is empty.
+The starting state must be on the top of user-provided DFA stack before calling `lex()`.  Current
+stack pointer `*p_sptr` must point to the position *after* initial state (the first free stack cell)
 
-3. If `has_more` is `!= 0`, in case of reaching the end of input buffer the analyzer leaves the
-   stack pointer `*p_sptr` as it is and returns `err_end_of_input`.  It gives a chance to add more
-   characters to the input sequence and call the `lex()` function again to continue the analysis.
-   Already analyzed part of input is no more needed.  All necessary information is in state stack.
-   Old input buffer can be freed (in theory, but it will likely be needed in future to concatenate
-   the full lexeme).
+After the function returns and the pattern is matched the stack pointer `*p_sptr` in the same as
+before calling the function.  In case if `has_more` is `0` the stack pointer `*p_sptr` is *always*
+the same as before the calling.  The function matches at least one character from the input buffer
+(returns `predef_pat_default (== 0)` if no user-provided pattern is matched), and returns
+`err_end_of_input` (negative) if input buffer is empty.
 
-4. User-provided DFA stack must have the same count of free cells as the length of the longest
-   possible lexeme, or `last - first` if we must deal with lexemes of arbitrary length.  The other
-   approach is to trim input buffer in case if it is longer than free range in user-provided DFA
-   stack and to facilitate `has_more` flag.  The code will look like this:
+If `has_more` is `!= 0`, in case of reaching the end of input buffer the analyzer leaves the stack
+pointer `*p_sptr` as it is and returns `err_end_of_input`.  It gives a chance to add more characters
+to the input sequence and call the `lex()` function again to continue the analysis.  Already
+analyzed part of input is no more needed.  All necessary information is in the state stack.  In
+theory, the old input buffer can be freed, but in practice it will likely be needed in future to
+concatenate the full lexeme.
+
+User-provided DFA stack must have the same count of free cells as the length of the longest possible
+lexeme, or `last - first` if we must deal with lexemes of arbitrary length.  The other approach is
+to trim input buffer in case if it is longer than free range in user-provided DFA stack and to
+facilitate `has_more` flag.  The code will look like this:
 
     ```cpp
         unsigned llen = 0;
@@ -172,9 +180,9 @@ notes:
         ...
     ```
 
-5. Hint: it is convenient to use the state stack also as a start condition stack.
+Note, that it is convenient to use the state stack also as a start condition stack.
 
-Summing this up, the simplest user's code can be something like this:
+Summing this up, the typical user's code can be something like this:
 
 ```cpp
 ...
@@ -185,8 +193,8 @@ namespace lex_detail {
 ...
 int main() {
     ...
-    const char* first = .... ; // the first char
-    const char* last = .... ; // after the last char
+    const char* first = .... ; // the first char pointer
+    const char* last = .... ; // after the last char pointer
     ...
     unsigned llen = 0;
     auto state_stack = std::make_unique<int[]>(kInitialStackSize);
@@ -201,7 +209,7 @@ int main() {
             bool stack_limitation = false;
             const char* trimmed_last = last;
             if (slast - sptr < last - trimmed_first) {
-                trimmed_last = trimmed_first + std::distance(sptr, slast);
+                trimmed_last = trimmed_first + static_cast<ptrdiff_t>(sptr, slast);
                 stack_limitation = true;
             }
             int pat = lex_detail::lex(trimmed_first, trimmed_last, &sptr, &llen, stack_limitation);
@@ -227,6 +235,43 @@ int main() {
     }
 }
 ```
+
+## Regular Expression Syntax
+
+These rules are used to compose regular expressions for definitions or patterns:
+
+- `x` if this character is not a ' ', FF, CR, HT, or VT matches the character 'x'.
+- `.` any character (byte) except newline (NL)
+- `[xyz]` a "character class"; in this case, matches 'x', 'y', or 'z'
+- `[abj-oZ]` a "character class" with a range in it; matches an 'a', a 'b', any letter from 'j'
+  through 'o', or a 'Z'
+- `[^A-Z]` a "negated character class", i.e., any character but those in the class.  In this case,
+  any character EXCEPT an uppercase letter.
+- `[^A-Z\n]` any character EXCEPT an uppercase letter or a newline
+- `{name}` the expansion of the "name" definition (see above)
+- `"[xyz]\"foo"` the literal string: `[xyz]"foo`
+- `\X` if X is an 'a', 'b', 'f', 'n', 'r', 't', or 'v', then the ANSI-C interpretation of \x.
+  Otherwise, a literal 'X' (used to escape operators such as '*')
+- `\123` the character with octal value 123
+- `\x2a` the character with hexadecimal value 2a
+- `r*` zero or more r's, where `r` is any regular expression
+- `r+` one or more r's
+- `r?` zero or one r's (that is, "an optional `r`")
+- `r{2,5}` anywhere from two to five r's
+- `r{2,}` two or more r's
+- `r{,2}` no more than two r's
+- `r{4}` exactly 4 r's
+- `(r)` match an `r`; parentheses are used to override precedence
+- `rs` the regular expression `r` followed by the regular expression `s`; called "concatenation"
+- `r|s` either an `r` or an `s`
+- `r/s` an `r` but only if it is followed by an `s`.  The text matched by `s` is included when
+  determining whether this rule is the "longest match", but is then returned to the input.  So the
+  returned lexeme is only the text matched by `r`.  This type of pattern is called trailing
+  context".
+
+Note that ' ', FF, CR, HT, or VT characters (bytes) are skipped while parsing regular expressions,
+use `\x20`, `\f`, `\r`, `\t`, or `\v` instead.  Also zero '\0' character (byte) is always treated as
+not matchable.
 
 ## Command Line Options
 
@@ -263,8 +308,8 @@ Perform these steps to build the project (in linux, for other platforms the step
     git submodule update --init
     ```
 
-3. Then, compilation script should be created using `cmake` tool.  To use the default compiler just
-   issue e.g.
+3. Then, compilation script should be created using `cmake` tool.  To use the default C++ compiler
+   just issue (for new enough version of `cmake`)
 
     ```bash
     cmake -S . -B build
@@ -282,7 +327,7 @@ Perform these steps to build the project (in linux, for other platforms the step
     cmake -S . -B build -DCMAKE_BUILD_TYPE="Release"
     ```
 
-4. Enter folder for building and run `make`
+4. Enter created folder `build` and run `make`
 
     ```bash
     cd build
