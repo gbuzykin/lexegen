@@ -81,9 +81,9 @@ void outputLexEngine(uxs::iobuf& outp, const EngineInfo& info) {
         "        if (n_pat > 0) {",
     };
     static constexpr std::string_view text3_any_has_trail_context[] = {
-        "            enum { kTrailContFlag = 1, kFlagCount = 1 };",
+        "            enum { kTrailingContextFlag = 1, kFlagCount = 1 };",
         "            int i;",
-        "            if (!(n_pat & kTrailContFlag)) {",
+        "            if (!(n_pat & kTrailingContextFlag)) {",
         "                *p_llen = (unsigned)(sptr - sptr0);",
         "                return n_pat >> kFlagCount;",
         "            }",
@@ -315,16 +315,16 @@ int main(int argc, char** argv) {
             eng_info.any_has_trail_context = false;
             for (unsigned state = 0; state < accept.size(); ++state) {
                 if (unsigned n_pat = accept[state]; n_pat > 0) {
-                    if (dfa_builder.isPatternWithTrailCont(n_pat)) { eng_info.any_has_trail_context = true; }
+                    if (dfa_builder.isPatternWithTrailingContext(n_pat)) { eng_info.any_has_trail_context = true; }
                 }
             }
 
             if (eng_info.any_has_trail_context) {
                 for (unsigned state = 0; state < accept.size(); ++state) {
                     if (unsigned n_pat = accept[state]; n_pat > 0) {
-                        enum { kTrailContFlag = 1, kFlagCount = 1 };
+                        enum { kTrailingContextFlag = 1, kFlagCount = 1 };
                         accept[state] <<= kFlagCount;
-                        if (dfa_builder.isPatternWithTrailCont(n_pat)) { accept[state] |= kTrailContFlag; }
+                        if (dfa_builder.isPatternWithTrailingContext(n_pat)) { accept[state] |= kTrailingContextFlag; }
                     }
                 }
             }

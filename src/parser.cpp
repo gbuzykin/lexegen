@@ -165,7 +165,7 @@ std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
         } else if (act != parser_detail::predef_act_shift) {
             switch (act) {
                 case parser_detail::act_trail_cont: {  // Trailing context
-                    auto trail_cont_node = std::make_unique<TrailContNode>();
+                    auto trail_cont_node = std::make_unique<TrailingContextNode>();
                     trail_cont_node->setRight(std::move(node_stack.back()));
                     node_stack.pop_back();
                     trail_cont_node->setLeft(std::move(node_stack.back()));
