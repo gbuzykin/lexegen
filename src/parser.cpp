@@ -147,6 +147,52 @@ bool Parser::parse() {
     return true;
 }
 
+namespace {
+std::unique_ptr<Node> makeMultiplicateNode(std::unique_ptr<Node> node, uxs::span<const unsigned> num) {
+    const auto* child = node.get();
+    // Mandatory part
+    std::unique_ptr<Node> left_subtree;
+    if (num[0] > 0) {
+        left_subtree = std::move(node);
+        for (unsigned i = 1; i < num[0]; ++i) {
+            auto cat_node = std::make_unique<Node>(NodeType::kCat);
+            cat_node->setLeft(std::move(left_subtree));
+            cat_node->setRight(child->clone());
+            left_subtree = std::move(cat_node);
+        }
+    }
+    // Optional part
+    std::unique_ptr<Node> right_subtree;
+    if (num.size() < 2) {  // Infinite multiplication
+        right_subtree = std::make_unique<Node>(NodeType::kStar);
+        right_subtree->setLeft(num[0] > 0 ? child->clone() : std::move(node));
+        assert(right_subtree->getLeft());
+    } else if (num[1] > num[0]) {  // Finite multiplication
+        right_subtree = std::make_unique<Node>(NodeType::kQuestion);
+        right_subtree->setLeft(num[0] > 0 ? child->clone() : std::move(node));
+        for (unsigned i = num[0] + 1; i < num[1]; i++) {
+            auto cat_node = std::make_unique<Node>(NodeType::kCat);
+            cat_node->setLeft(std::move(right_subtree));
+            cat_node->setRight(std::make_unique<Node>(NodeType::kQuestion));
+            cat_node->getRight()->setLeft(child->clone());
+            right_subtree = std::move(cat_node);
+        }
+    }
+    // Concatenate mandatory and optional parts
+    if (left_subtree && right_subtree) {
+        auto cat_node = std::make_unique<Node>(NodeType::kCat);
+        cat_node->setLeft(std::move(left_subtree));
+        cat_node->setRight(std::move(right_subtree));
+        return cat_node;
+    } else if (left_subtree) {
+        return left_subtree;
+    } else if (right_subtree) {
+        return right_subtree;
+    }
+    return std::make_unique<EmptySymbNode>();
+}
+}  // namespace
+
 std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
     unsigned num[2] = {0, 0}, num_given = 0;
     std::vector<std::unique_ptr<Node>> node_stack;
@@ -164,7 +210,7 @@ std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
             return {nullptr, tt};
         } else if (act != parser_detail::predef_act_shift) {
             switch (act) {
-                case parser_detail::act_trail_cont: {  // Trailing context
+                case parser_detail::act_trailing_context: {  // Trailing context
                     auto trail_cont_node = std::make_unique<TrailingContextNode>();
                     trail_cont_node->setRight(std::move(node_stack.back()));
                     node_stack.pop_back();
@@ -201,61 +247,19 @@ std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
                     question_node->setLeft(std::move(node_stack.back()));
                     node_stack.back() = std::move(question_node);
                 } break;
-                case parser_detail::act_zero_num: {  // Zero number
-                    assert(num_given < 2);
-                    num[num_given++] = 0;
+                case parser_detail::act_mult_exact: {  // Multiplicate node (exact count)
+                    num[1] = num[0];
+                    node_stack.back() = makeMultiplicateNode(std::move(node_stack.back()), uxs::as_span(num, 2));
                 } break;
-
-                case parser_detail::act_same_num: {  // Duplicate number
-                    assert(num_given < 2);
-                    num[num_given++] = num[0];
-                }; break;
-                case parser_detail::act_mult_finite:
-                case parser_detail::act_mult_infinite: {  // Multiplicate node
-                    assert(num_given > 0);
-                    const auto* child = node_stack.back().get();
-                    // Mandatory part
-                    std::unique_ptr<Node> left_subtree;
-                    if (num[0] > 0) {
-                        left_subtree = std::move(node_stack.back());
-                        for (unsigned i = 1; i < num[0]; ++i) {
-                            auto cat_node = std::make_unique<Node>(NodeType::kCat);
-                            cat_node->setLeft(std::move(left_subtree));
-                            cat_node->setRight(child->clone());
-                            left_subtree = std::move(cat_node);
-                        }
-                    }
-                    // Optional part
-                    std::unique_ptr<Node> right_subtree;
-                    if (act == parser_detail::act_mult_infinite) {  // Infinite multiplication
-                        right_subtree = std::make_unique<Node>(NodeType::kStar);
-                        right_subtree->setLeft(num[0] > 0 ? child->clone() : std::move(node_stack.back()));
-                        assert(right_subtree->getLeft());
-                    } else if (num[1] > num[0]) {  // Finite multiplication
-                        right_subtree = std::make_unique<Node>(NodeType::kQuestion);
-                        right_subtree->setLeft(num[0] > 0 ? child->clone() : std::move(node_stack.back()));
-                        for (unsigned i = num[0] + 1; i < num[1]; i++) {
-                            auto cat_node = std::make_unique<Node>(NodeType::kCat);
-                            cat_node->setLeft(std::move(right_subtree));
-                            cat_node->setRight(std::make_unique<Node>(NodeType::kQuestion));
-                            cat_node->getRight()->setLeft(child->clone());
-                            right_subtree = std::move(cat_node);
-                        }
-                    }
-                    // Concatenate fixed and optional parts
-                    if (left_subtree && right_subtree) {
-                        auto cat_node = std::make_unique<Node>(NodeType::kCat);
-                        cat_node->setLeft(std::move(left_subtree));
-                        cat_node->setRight(std::move(right_subtree));
-                        node_stack.back() = std::move(cat_node);
-                    } else if (left_subtree) {
-                        node_stack.back() = std::move(left_subtree);
-                    } else if (right_subtree) {
-                        node_stack.back() = std::move(right_subtree);
-                    } else {
-                        node_stack.back() = std::make_unique<EmptySymbNode>();
-                    }
-                    num_given = 0;
+                case parser_detail::act_mult_not_more_than: {  // Multiplicate node (not more than given count)
+                    num[1] = num[0], num[0] = 0;
+                    node_stack.back() = makeMultiplicateNode(std::move(node_stack.back()), uxs::as_span(num, 2));
+                } break;
+                case parser_detail::act_mult_not_less_than: {  // Multiplicate node (not less than given count)
+                    node_stack.back() = makeMultiplicateNode(std::move(node_stack.back()), uxs::as_span(num, 1));
+                } break;
+                case parser_detail::act_mult_range: {  // Multiplicate node (given range)
+                    node_stack.back() = makeMultiplicateNode(std::move(node_stack.back()), uxs::as_span(num, 2));
                 } break;
             }
         } else if (tt != parser_detail::tt_nl) {
@@ -309,6 +313,11 @@ int Parser::lex() {
     char *str_start = nullptr, *str_end = nullptr;
     tkn_.loc = {ln_, col_, col_};
 
+    auto print_unterm_token_msg = [this] { logger::error(*this, tkn_.loc).format("unterminated token"); };
+    auto print_zero_escape_char_msg = [this] {
+        logger::error(*this, tkn_.loc).format("zero escape character is not allowed");
+    };
+
     while (true) {
         int pat = 0;
         unsigned llen = 0;
@@ -335,8 +344,9 @@ int Parser::lex() {
             } else {
                 int sc = state_stack_.back();
                 tkn_.loc.col_last = tkn_.loc.col_first;
-                if (sc == lex_detail::sc_string || sc == lex_detail::sc_sset) { return parser_detail::tt_unterm_token; }
-                return parser_detail::tt_eof;
+                if (sc != lex_detail::sc_string && sc != lex_detail::sc_symb_set) { return parser_detail::tt_eof; }
+                print_unterm_token_msg();
+                return parser_detail::tt_lexical_error;
             }
         }
         first_ += llen, col_ += llen;
@@ -356,11 +366,19 @@ int Parser::lex() {
             case lex_detail::pat_escape_hex: {
                 escape = uxs::dig_v<16>(lexeme[2]);
                 if (llen > 3) { *escape = (*escape << 4) + uxs::dig_v<16>(lexeme[3]); }
+                if (!*escape) {
+                    print_zero_escape_char_msg();
+                    return parser_detail::tt_lexical_error;
+                }
             } break;
             case lex_detail::pat_escape_oct: {
                 escape = uxs::dig_v<8>(lexeme[1]);
                 if (llen > 2) { *escape = (*escape << 3) + uxs::dig_v<8>(lexeme[2]); }
                 if (llen > 3) { *escape = (*escape << 3) + uxs::dig_v<8>(lexeme[3]); }
+                if (!*escape) {
+                    print_zero_escape_char_msg();
+                    return parser_detail::tt_lexical_error;
+                }
             } break;
 
             // ------ strings
@@ -379,15 +397,15 @@ int Parser::lex() {
             } break;
 
             // ------ regex symbol sets
-            case lex_detail::pat_regex_sset:
-            case lex_detail::pat_regex_sset_inv: {
-                sset_is_inverted = pat == lex_detail::pat_regex_sset_inv;
+            case lex_detail::pat_regex_symb_set:
+            case lex_detail::pat_regex_symb_set_inv: {
+                sset_is_inverted = pat == lex_detail::pat_regex_symb_set_inv;
                 sset_range_flag = false;
                 sset_last = 0;
                 tkn_.val = ValueSet();
-                state_stack_.push_back(lex_detail::sc_sset);
+                state_stack_.push_back(lex_detail::sc_symb_set);
             } break;
-            case lex_detail::pat_regex_sset_seq: {
+            case lex_detail::pat_regex_symb_set_seq: {
                 if (sset_range_flag) {
                     std::get<ValueSet>(tkn_.val).addValues(sset_last, static_cast<unsigned char>(*lexeme));
                     sset_range_flag = false;
@@ -397,14 +415,14 @@ int Parser::lex() {
                     std::get<ValueSet>(tkn_.val).addValue(static_cast<unsigned char>(lexeme[n]));
                 }
             } break;
-            case lex_detail::pat_regex_sset_range: {
+            case lex_detail::pat_regex_symb_set_range: {
                 if (!sset_range_flag && sset_last != '\0') {
                     sset_range_flag = true;
                 } else {
                     escape = '-';  // Treat `-` as a character
                 }
             } break;
-            case lex_detail::pat_regex_sset_close: {
+            case lex_detail::pat_regex_symb_set_close: {
                 if (sset_range_flag) { std::get<ValueSet>(tkn_.val).addValue('-'); }  // Treat `-` as a character
                 if (sset_is_inverted) { std::get<ValueSet>(tkn_.val) ^= ValueSet(1, 255); }
                 state_stack_.pop_back();
@@ -423,11 +441,11 @@ int Parser::lex() {
                 tkn_.val = std::string_view(lexeme + 1, llen - 2);
                 return parser_detail::tt_id;
             } break;
-            case lex_detail::pat_regex_br: {
-                state_stack_.push_back(lex_detail::sc_regex_br);
+            case lex_detail::pat_regex_left_curly_brace: {
+                state_stack_.push_back(lex_detail::sc_regex_curly_braces);
                 return '{';
             } break;
-            case lex_detail::pat_regex_br_close: {
+            case lex_detail::pat_regex_right_curly_brace: {
                 state_stack_.pop_back();
                 return '}';
             } break;
@@ -459,15 +477,18 @@ int Parser::lex() {
             case lex_detail::pat_sep: return parser_detail::tt_sep;
             case lex_detail::pat_other: return static_cast<unsigned char>(*lexeme);
             case lex_detail::pat_whitespace: tkn_.loc.col_first = col_; break;
-            case lex_detail::pat_unterm_token: return parser_detail::tt_unterm_token;
+            case lex_detail::pat_unexpected_nl: {
+                print_unterm_token_msg();
+                return parser_detail::tt_lexical_error;
+            } break;
             case lex_detail::pat_nl: break;
-            default: return -1;
+            default: return parser_detail::tt_eof;
         }
 
         if (escape) {  // Process escape character
             switch (state_stack_.back()) {
                 case lex_detail::sc_string: *str_end++ = *escape; break;
-                case lex_detail::sc_sset: {
+                case lex_detail::sc_symb_set: {
                     if (sset_range_flag) {
                         std::get<ValueSet>(tkn_.val).addValues(sset_last, static_cast<unsigned char>(*escape));
                         sset_range_flag = false;
@@ -492,7 +513,7 @@ void Parser::logSyntaxError(int tt) const {
     switch (tt) {
         case parser_detail::tt_eof: msg = "unexpected end of file"; break;
         case parser_detail::tt_nl: msg = "unexpected end of line"; break;
-        case parser_detail::tt_unterm_token: msg = "unterminated token"; break;
+        case parser_detail::tt_lexical_error: return;
         default: msg = "unexpected token"; break;
     }
     logger::error(*this, tkn_.loc).format(msg);
