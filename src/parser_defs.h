@@ -14,23 +14,23 @@ enum {
     tt_option,
     tt_sep,
     tt_sc_list_begin,
-    tt_unterm_token,
+    tt_lexical_error,
     total_token_count
 };
 
 enum {
     predef_act_shift = 0,
     predef_act_reduce = 1,
-    act_trail_cont,
+    act_trailing_context,
     act_or,
     act_cat,
     act_star,
     act_plus,
     act_question,
-    act_zero_num,
-    act_same_num,
-    act_mult_finite,
-    act_mult_infinite,
+    act_mult_exact,
+    act_mult_not_more_than,
+    act_mult_not_less_than,
+    act_mult_range,
     total_action_count
 };
 
