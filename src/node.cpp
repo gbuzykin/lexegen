@@ -64,7 +64,7 @@ void PositionalNode::calcFunctions(std::vector<PositionalNode*>& positions) {
     lastpos_.addValue(position_);
 }
 
-void TrailContNode::calcFunctions(std::vector<PositionalNode*>& positions) {
+void TrailingContextNode::calcFunctions(std::vector<PositionalNode*>& positions) {
     assert(left_);
     assert(right_);
     left_->calcFunctions(positions);

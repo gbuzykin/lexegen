@@ -7,16 +7,16 @@
 
 // Node types
 enum class NodeType {
-    kOr,         // Variant
-    kCat,        // Concatenation
-    kStar,       // Series
-    kPlus,       // At least one series
-    kQuestion,   // One or nothing
-    kSymbol,     // Symbol
-    kSymbSet,    // Symbol set
-    kEmptySymb,  // Empty symbol
-    kTrailCont,  // Trailing context
-    kTerm        // Termination symbol
+    kOr,               // Variant
+    kCat,              // Concatenation
+    kStar,             // Series
+    kPlus,             // At least one series
+    kQuestion,         // One or nothing
+    kSymbol,           // Symbol
+    kSymbSet,          // Symbol set
+    kEmptySymb,        // Empty symbol
+    kTrailingContext,  // Trailing context
+    kTerm              // Termination symbol
 };
 
 class PositionalNode;
@@ -94,10 +94,10 @@ class SymbSetNode : public PositionalNode {
 };
 
 // Trailing context node
-class TrailContNode : public PositionalNode {
+class TrailingContextNode : public PositionalNode {
  public:
-    TrailContNode() : PositionalNode(NodeType::kTrailCont) {}
-    std::unique_ptr<Node> clone() const override { return std::make_unique<TrailContNode>(); };
+    TrailingContextNode() : PositionalNode(NodeType::kTrailingContext) {}
+    std::unique_ptr<Node> clone() const override { return std::make_unique<TrailingContextNode>(); };
     void calcFunctions(std::vector<PositionalNode*>& positions) override;
 };
 

@@ -89,9 +89,9 @@ unroll:
     while (sptr != sptr0) { /* Unroll down-to last accepting state */
         int n_pat = accept[(state = *(sptr - 1))];
         if (n_pat > 0) {
-            enum { kTrailContFlag = 1, kFlagCount = 1 };
+            enum { kTrailingContextFlag = 1, kFlagCount = 1 };
             int i;
-            if (!(n_pat & kTrailContFlag)) {
+            if (!(n_pat & kTrailingContextFlag)) {
                 *p_llen = (unsigned)(sptr - sptr0);
                 return n_pat >> kFlagCount;
             }
