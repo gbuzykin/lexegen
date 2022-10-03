@@ -101,7 +101,7 @@ As the result two files with default names `lex_defs.h` and `lex_analyzer.inl` a
 is needed to specify the names explicitly the following should be issued:
 
 ```bash
-./lexegen test.lex -h <new-defs-file-name> -o <new-analyzer-file-name>
+./lexegen test.lex -o <new-analyzer-file-name> --header-file=<new-defs-file-name> 
 ```
 
 File `lex_defs.h` contains numerical identifiers for patterns and start conditions (or start
@@ -282,18 +282,23 @@ not matchable.
 
 ```bash
 $ ./lexegen --help
-Usage: lexegen [options] file
-Options:
-    -o <file>                Place the output analyzer into <file>.
-    -h <file>                Place the output definitions into <file>.
-    --no-case                Build case insensitive analyzer.
-    --compress0              Do not compress analyzer table, do not use `meta` table.
-    --compress1              Do not compress analyzer table.
-    --compress2              Default compression.
-    --use-int8-if-possible   Use `int8_t` instead of `int` for states if state count is < 128.
-    -O0                      Do not optimize analyzer states.
-    -O1                      Default analyzer optimization.
-    --help                   Display this information.
+OVERVIEW: A tool for regular-expression based lexical analyzer generation
+USAGE: ./lexegen file [-o<file>] [--header-file=<file>] [--no-case] [--compress<n>]
+           [--use-int8-if-possible] [-O<n>] [-h] [-V]
+OPTIONS: 
+    -o, --outfile=<file>    Place the output analyzer into <file>.
+    --header-file=<file>    Place the output definitions into <file>.
+    --no-case               Build case insensitive analyzer.
+    --compress<n>           Set compression level to <n>:
+                                0 - do not compress analyzer table, do not use `meta` table;
+                                1 - do not compress analyzer table;
+                                2 - Default compression.
+    --use-int8-if-possible  Use `int8_t` instead of `int` for states if state count is < 128.
+    -O<n>                   Set optimization level to <n>:
+                                0 - Do not optimize analyzer states;
+                                1 - Default analyzer optimization.
+    -h, --help              Display this information.
+    -V, --version           Display version.
 ```
 
 ## How to Build `lexegen`
