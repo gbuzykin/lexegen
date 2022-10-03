@@ -3,7 +3,11 @@
 #include "parser.h"
 
 #include "uxs/algorithm.h"
+#include "uxs/cli/parser.h"
 #include "uxs/io/filebuf.h"
+
+#define XSTR(s) STR(s)
+#define STR(s)  #s
 
 template<typename Iter>
 void outputData(uxs::iobuf& outp, Iter from, Iter to, size_t ntab = 0) {
@@ -140,58 +144,59 @@ int main(int argc, char** argv) {
     try {
         bool case_insensitive = false;
         bool use_int8_if_possible = false;
+        bool show_help = false, show_version = false;
         int optimization_level = 1;
         std::string input_file_name;
         std::string analyzer_file_name("lex_analyzer.inl");
         std::string defs_file_name("lex_defs.h");
         EngineInfo eng_info;
-        for (int i = 1; i < argc; ++i) {
-            std::string_view arg(argv[i]);
-            if (arg == "-o") {
-                if (++i < argc) { analyzer_file_name = argv[i]; }
-            } else if (arg == "-h") {
-                if (++i < argc) { defs_file_name = argv[i]; }
-            } else if (arg == "--no-case") {
-                case_insensitive = true;
-            } else if (arg == "--compress0") {
-                eng_info.compress_level = 0;
-            } else if (arg == "--compress1") {
-                eng_info.compress_level = 1;
-            } else if (arg == "--compress2") {
-            } else if (arg == "--use-int8-if-possible") {
-                use_int8_if_possible = true;
-            } else if (arg == "-O0") {
-                optimization_level = 0;
-            } else if (arg == "-O1") {
-            } else if (arg == "--help") {
-                // clang-format off
-                static constexpr std::string_view text[] = {
-                    "Usage: lexegen [options] file",
-                    "Options:",
-                    "    -o <file>                Place the output analyzer into <file>.",
-                    "    -h <file>                Place the output definitions into <file>.",
-                    "    --no-case                Build case insensitive analyzer.",
-                    "    --compress0              Do not compress analyzer table, do not use `meta` table.",
-                    "    --compress1              Do not compress analyzer table.",
-                    "    --compress2              Default compression.",
-                    "    --use-int8-if-possible   Use `int8_t` instead of `int` for states if state count is < 128.",
-                    "    -O0                      Do not optimize analyzer states.",
-                    "    -O1                      Default analyzer optimization.",
-                    "    --help                   Display this information.",
-                };
-                // clang-format on
-                for (const auto& l : text) { uxs::stdbuf::out.write(l).endl(); }
-                return 0;
-            } else if (arg[0] != '-') {
-                input_file_name = arg;
-            } else {
-                logger::fatal().format("unknown command line option `{}`", arg);
-                return -1;
-            }
-        }
+        auto cli = uxs::cli::command(argv[0])
+                   << uxs::cli::overview("A tool for regular-expression based lexical analyzer generation")
+                   << uxs::cli::value("file", input_file_name)
+                   << (uxs::cli::option({"-o", "--outfile="}) & uxs::cli::value("~<file>", analyzer_file_name)) %
+                          "Place the output analyzer into <file>."
+                   << (uxs::cli::option({"--header-file="}) & uxs::cli::value("~<file>", defs_file_name)) %
+                          "Place the output definitions into <file>."
+                   << uxs::cli::option({"--no-case"}).set(case_insensitive) % "Build case insensitive analyzer."
+                   << (uxs::cli::option({"--compress"}) & uxs::cli::value("~<n>", eng_info.compress_level)) %
+                          "Set compression level to <n>:\n"
+                          "    0 - do not compress analyzer table, do not use `meta` table;\n"
+                          "    1 - do not compress analyzer table;\n"
+                          "    2 - Default compression."
+                   << uxs::cli::option({"--use-int8-if-possible"}).set(use_int8_if_possible) %
+                          "Use `int8_t` instead of `int` for states if state count is < 128."
+                   << (uxs::cli::option({"-O"}) & uxs::cli::value("~<n>", optimization_level)) %
+                          "Set optimization level to <n>:\n"
+                          "    0 - Do not optimize analyzer states;\n"
+                          "    1 - Default analyzer optimization."
+                   << uxs::cli::option({"-h", "--help"}).set(show_help) % "Display this information."
+                   << uxs::cli::option({"-V", "--version"}).set(show_version) % "Display version.";
 
-        if (input_file_name.empty()) {
-            logger::fatal().format("no input file specified");
+        auto parse_result = cli->parse(argc, argv);
+        if (show_help) {
+            for (auto const* node = parse_result.node; node; node = node->get_parent()) {
+                if (node->get_type() == uxs::cli::node_type::kCommand) {
+                    uxs::stdbuf::out.write(static_cast<const uxs::cli::basic_command<char>&>(*node).make_man_page(true));
+                    break;
+                }
+            }
+            return 0;
+        } else if (show_version) {
+            uxs::stdbuf::out.write(XSTR(VERSION)).endl();
+            return 0;
+        } else if (parse_result.status != uxs::cli::parsing_status::kOk) {
+            switch (parse_result.status) {
+                case uxs::cli::parsing_status::kUnknownOption: {
+                    logger::fatal().format("unknown command line option `{}`", argv[parse_result.arg_count]);
+                } break;
+                case uxs::cli::parsing_status::kInvalidValue: {
+                    logger::fatal().format("invalid command line argument: {}", argv[parse_result.arg_count]);
+                } break;
+                case uxs::cli::parsing_status::kUnspecifiedValue: {
+                    if (input_file_name.empty()) { logger::fatal().format("no input file specified"); }
+                } break;
+                default: break;
+            }
             return -1;
         }
 
@@ -276,7 +281,7 @@ int main(int argc, char** argv) {
             const auto& Dtran = dfa_builder.getDtran();
             if (eng_info.compress_level > 0) {
                 outputArray(ofile, "uint8_t", "symb2meta", symb2meta.begin(), symb2meta.end());
-                if (eng_info.compress_level < 2) {
+                if (eng_info.compress_level == 1) {
                     if (!Dtran.empty()) {
                         std::vector<int> dtran_data;
                         int dtran_width = dfa_builder.getMetaCount();
