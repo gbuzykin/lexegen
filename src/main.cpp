@@ -153,19 +153,19 @@ int main(int argc, char** argv) {
         auto cli = uxs::cli::command(argv[0])
                    << uxs::cli::overview("A tool for regular-expression based lexical analyzer generation")
                    << uxs::cli::value("file", input_file_name)
-                   << (uxs::cli::option({"-o", "--outfile="}) & uxs::cli::value("~<file>", analyzer_file_name)) %
+                   << (uxs::cli::option({"-o", "--outfile="}) & uxs::cli::value("<file>", analyzer_file_name)) %
                           "Place the output analyzer into <file>."
-                   << (uxs::cli::option({"--header-file="}) & uxs::cli::value("~<file>", defs_file_name)) %
+                   << (uxs::cli::option({"--header-file="}) & uxs::cli::value("<file>", defs_file_name)) %
                           "Place the output definitions into <file>."
                    << uxs::cli::option({"--no-case"}).set(case_insensitive) % "Build case insensitive analyzer."
-                   << (uxs::cli::option({"--compress"}) & uxs::cli::value("~<n>", eng_info.compress_level)) %
+                   << (uxs::cli::option({"--compress"}) & uxs::cli::value("<n>", eng_info.compress_level)) %
                           "Set compression level to <n>:\n"
                           "    0 - do not compress analyzer table, do not use `meta` table;\n"
                           "    1 - do not compress analyzer table;\n"
                           "    2 - Default compression."
                    << uxs::cli::option({"--use-int8-if-possible"}).set(use_int8_if_possible) %
                           "Use `int8_t` instead of `int` for states if state count is < 128."
-                   << (uxs::cli::option({"-O"}) & uxs::cli::value("~<n>", optimization_level)) %
+                   << (uxs::cli::option({"-O"}) & uxs::cli::value("<n>", optimization_level)) %
                           "Set optimization level to <n>:\n"
                           "    0 - Do not optimize analyzer states;\n"
                           "    1 - Default analyzer optimization."
