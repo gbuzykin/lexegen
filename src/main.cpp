@@ -217,14 +217,14 @@ int main(int argc, char** argv) {
         const auto& patterns = parser.getPatterns();
         const auto& start_conditions = parser.getStartConditions();
 
-        DfaBuilder dfa_builder;
+        DfaBuilder dfa_builder(input_file_name);
         unsigned n_pat = 0;
         for (size_t i = 0; i < patterns.size(); ++i) {
             dfa_builder.addPattern(parser.extractPatternTree(i), ++n_pat, patterns[i].sc);
         }
 
-        // Build lexer
-        uxs::stdbuf::out.write("\033[1;34mBuilding lexer...\033[0m").endl();
+        // Build analyzer
+        logger::info(input_file_name).format("\033[1;34mbuilding analyzer...\033[0m");
         dfa_builder.build(static_cast<unsigned>(start_conditions.size()), case_insensitive);
 
         size_t state_sz = sizeof(int);
@@ -234,23 +234,19 @@ int main(int argc, char** argv) {
             eng_info.state_type = "int", state_sz = sizeof(int);
         }
 
-        uxs::println(" transition table size: {} bytes",
-                     dfa_builder.getMetaCount() * dfa_builder.getDtran().size() * state_sz);
-        uxs::stdbuf::out.write("\033[0;32mDone.\033[0m").endl();
+        logger::info(input_file_name)
+            .format(" - transition table size: {} bytes",
+                    dfa_builder.getMetaCount() * dfa_builder.getDtran().size() * state_sz);
+        logger::info(input_file_name).format("\033[1;32mdone\033[0m");
 
         if (optimization_level > 0) {
-            uxs::stdbuf::out.write("\033[1;34mOptimizing states...\033[0m").endl();
+            logger::info(input_file_name).format("\033[1;34moptimizing states...\033[0m");
             dfa_builder.optimize();
 
-            if (use_int8_if_possible && dfa_builder.getDtran().size() < 128) {
-                eng_info.state_type = "int8_t", state_sz = 1;
-            } else {
-                eng_info.state_type = "int", state_sz = sizeof(int);
-            }
-
-            uxs::println(" transition table size: {} bytes",
-                         dfa_builder.getMetaCount() * dfa_builder.getDtran().size() * state_sz);
-            uxs::stdbuf::out.write("\033[0;32mDone.\033[0m").endl();
+            logger::info(input_file_name)
+                .format(" - transition table size: {} bytes",
+                        dfa_builder.getMetaCount() * dfa_builder.getDtran().size() * state_sz);
+            logger::info(input_file_name).format("\033[1;32mdone\033[0m");
         }
 
         if (uxs::filebuf ofile(defs_file_name.c_str(), "w"); ofile) {
@@ -299,12 +295,13 @@ int main(int argc, char** argv) {
                     }
                 } else {
                     std::vector<int> def, base, next, check;
-                    uxs::stdbuf::out.write("\033[1;34mCompressing tables...\033[0m").endl();
+                    logger::info(input_file_name).format("\033[1;34mcompressing tables...\033[0m");
                     dfa_builder.makeCompressedDtran(def, base, next, check);
 
-                    uxs::println(" total compressed transition table size: {} bytes",
-                                 (def.size() + next.size() + check.size()) * state_sz + base.size() * sizeof(int));
-                    uxs::stdbuf::out.write("\033[0;32mDone.\033[0m").endl();
+                    logger::info(input_file_name)
+                        .format(" - total compressed transition table size: {} bytes",
+                                (def.size() + next.size() + check.size()) * state_sz + base.size() * sizeof(int));
+                    logger::info(input_file_name).format("\033[1;32mdone\033[0m");
 
                     outputArray(ofile, eng_info.state_type, "def", def.begin(), def.end());
                     outputArray(ofile, "int", "base", base.begin(), base.end());
