@@ -4,6 +4,7 @@
 
 #include <array>
 #include <memory>
+#include <string>
 #include <vector>
 
 class Node;
@@ -15,6 +16,8 @@ class DfaBuilder {
     static const unsigned kSymbCount = 256;
     static const unsigned kCountWeight = 1;
     static const unsigned kSegSizeWeight = 1;
+
+    explicit DfaBuilder(std::string file_name) : file_name_(std::move(file_name)) {}
 
     void addPattern(std::unique_ptr<Node> syn_tree, unsigned n_pat, const ValueSet& sc);
     bool isPatternWithTrailingContext(unsigned n_pat) const;
@@ -38,6 +41,7 @@ class DfaBuilder {
         std::unique_ptr<Node> syn_tree;
     };
 
+    std::string file_name_;
     unsigned sc_count_ = 0;
     unsigned meta_count_ = 0;
     std::vector<Pattern> patterns_;

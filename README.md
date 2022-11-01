@@ -78,23 +78,23 @@ Then, in order to generate our lexical analyzer let's issue the following:
 
 ```bash
 $ ./lexegen test.lex
-Building lexer...
- - pattern count: 7
- - S-state count: 1
- - position count: 44
- - meta-symbol count: 13
- - state count: 24
- transition table size: 1248 bytes
-Done.
-Optimizing states...
- - state group count: 19
- - dead group count: 0
- - new state count: 19
- transition table size: 988 bytes
-Done.
-Compressing tables...
- total compressed transition table size: 656 bytes
-Done.
+test.lex: info: building analyzer...
+test.lex: info:  - pattern count: 7
+test.lex: info:  - S-state count: 1
+test.lex: info:  - position count: 44
+test.lex: info:  - meta-symbol count: 13
+test.lex: info:  - state count: 24
+test.lex: info:  - transition table size: 1248 bytes
+test.lex: info: done
+test.lex: info: optimizing states...
+test.lex: info:  - state group count: 19
+test.lex: info:  - dead group count: 0
+test.lex: info:  - new state count: 19
+test.lex: info:  - transition table size: 988 bytes
+test.lex: info: done
+test.lex: info: compressing tables...
+test.lex: info:  - total compressed transition table size: 656 bytes
+test.lex: info: done
 ```
 
 As the result two files with default names `lex_defs.h` and `lex_analyzer.inl` are generated.  If it
@@ -283,18 +283,18 @@ not matchable.
 ```bash
 $ ./lexegen --help
 OVERVIEW: A tool for regular-expression based lexical analyzer generation
-USAGE: ./lexegen file [-o<file>] [--header-file=<file>] [--no-case] [--compress<n>]
-           [--use-int8-if-possible] [-O<n>] [-h] [-V]
-OPTIONS: 
+USAGE: ./lexegen.exe file [-o <file>] [--header-file=<file>] [--no-case] [--compress <n>]
+           [--use-int8-if-possible] [-O <n>] [-h] [-V]
+OPTIONS:
     -o, --outfile=<file>    Place the output analyzer into <file>.
     --header-file=<file>    Place the output definitions into <file>.
     --no-case               Build case insensitive analyzer.
-    --compress<n>           Set compression level to <n>:
+    --compress <n>          Set compression level to <n>:
                                 0 - do not compress analyzer table, do not use `meta` table;
                                 1 - do not compress analyzer table;
                                 2 - Default compression.
     --use-int8-if-possible  Use `int8_t` instead of `int` for states if state count is < 128.
-    -O<n>                   Set optimization level to <n>:
+    -O <n>                  Set optimization level to <n>:
                                 0 - Do not optimize analyzer states;
                                 1 - Default analyzer optimization.
     -h, --help              Display this information.
