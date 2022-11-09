@@ -13,6 +13,9 @@
 
 %action trailing_context
 %action or
+%action left_nl_anchoring
+%action left_not_nl_anchoring
+%action right_nl_anchoring
 %action cat
 %action star
 %action plus
@@ -24,6 +27,8 @@
 
 %nonassoc '/'
 %left '|'
+%left '$'
+%right '^'
 
 %%
 
@@ -31,6 +36,9 @@ regex : expr [nl] ;
 
 expr : expr '/' expr {trailing_context}
   | expr '|' expr {or}
+  | '^' expr {left_nl_anchoring}
+  | '!' '^' expr {left_not_nl_anchoring}
+  | expr '$' {right_nl_anchoring}
   | concat
   ;
 

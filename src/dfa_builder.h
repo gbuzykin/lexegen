@@ -3,6 +3,7 @@
 #include "valset.h"
 
 #include <array>
+#include <list>
 #include <memory>
 #include <string>
 #include <vector>
@@ -21,6 +22,7 @@ class DfaBuilder {
 
     void addPattern(std::unique_ptr<Node> syn_tree, unsigned n_pat, const ValueSet& sc);
     bool isPatternWithTrailingContext(unsigned n_pat) const;
+    bool hasPatternsWithLeftNlAnchoring() const;
     void build(unsigned sc_count,     // Start condition count
                bool case_insensitive  // Case insensitive DFA?
     );
@@ -42,9 +44,9 @@ class DfaBuilder {
     };
 
     std::string file_name_;
-    unsigned sc_count_ = 0;
+    unsigned start_state_count_ = 0;
     unsigned meta_count_ = 0;
-    std::vector<Pattern> patterns_;
+    std::list<Pattern> patterns_;
     std::vector<int> symb2meta_;
     std::vector<std::array<int, kSymbCount>> Dtran_;
     std::vector<int> accept_;

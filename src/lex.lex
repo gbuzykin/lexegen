@@ -39,13 +39,13 @@ unexpected_nl  <string symb_set> \n
 whitespace    {ws}+
 
 regex_symb_set            <regex sc_list> \[
-regex_symb_set_inv        <regex sc_list> \[^
+regex_symb_set_inv        <regex sc_list> \[\^
 regex_dot                 <regex sc_list> \.
 regex_id                  <regex sc_list> \{{id}}
 regex_left_curly_brace    <regex sc_list> \{
 regex_nl                  <regex sc_list regex_curly_braces> \n
 regex_right_curly_brace   <regex_curly_braces> }
-regex_symb                <regex sc_list> [^"|/*+?()]
+regex_symb                <regex sc_list> [^"|/*+?^$!()]
 
 start    <initial> "%start"
 option   <initial> "%option"

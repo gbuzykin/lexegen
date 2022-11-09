@@ -3,6 +3,9 @@
 #include "logger.h"
 #include "valset.h"
 
+#include "uxs/iterator.h"
+
+#include <list>
 #include <memory>
 #include <unordered_map>
 #include <variant>
@@ -32,9 +35,8 @@ class Parser {
     bool parse();
     const std::string& getFileName() const { return file_name_; }
     const std::string& getCurrentLine() const { return current_line_; }
-    const std::vector<Pattern>& getPatterns() const { return patterns_; }
     const std::vector<std::string_view>& getStartConditions() const { return start_conditions_; }
-    std::unique_ptr<Node> extractPatternTree(size_t n) { return std::move(patterns_[n].syn_tree); }
+    uxs::iterator_range<std::list<Pattern>::iterator> getPatterns() { return uxs::make_range(patterns_); }
 
  private:
     using TokenVal = std::variant<unsigned, std::string_view, ValueSet>;
@@ -56,7 +58,7 @@ class Parser {
     std::unordered_map<std::string_view, std::string_view> options_;
     std::unordered_map<std::string_view, std::unique_ptr<Node>> definitions_;
     std::vector<std::string_view> start_conditions_;
-    std::vector<Pattern> patterns_;
+    std::list<Pattern> patterns_;
 
     std::pair<std::unique_ptr<Node>, int> parseRegex(int tt);
 
