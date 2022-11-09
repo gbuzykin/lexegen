@@ -32,8 +32,10 @@ void Node::calcFunctions(std::vector<PositionalNode*>& positions) {
         } break;
         case NodeType::kStar:
         case NodeType::kPlus:
-        case NodeType::kQuestion: {
-            nullable_ = type_ != NodeType::kPlus || left_->nullable_;
+        case NodeType::kQuestion:
+        case NodeType::kLeftNlAnchoring:
+        case NodeType::kLeftNotNlAnchoring: {
+            nullable_ = type_ == NodeType::kStar || type_ == NodeType::kQuestion || left_->nullable_;
             firstpos_ = left_->firstpos_;
             lastpos_ = left_->lastpos_;
         } break;

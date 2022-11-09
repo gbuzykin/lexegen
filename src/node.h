@@ -7,16 +7,18 @@
 
 // Node types
 enum class NodeType {
-    kOr,               // Variant
-    kCat,              // Concatenation
-    kStar,             // Series
-    kPlus,             // At least one series
-    kQuestion,         // One or nothing
-    kSymbol,           // Symbol
-    kSymbSet,          // Symbol set
-    kEmptySymb,        // Empty symbol
-    kTrailingContext,  // Trailing context
-    kTerm              // Termination symbol
+    kOr,                  // Variant
+    kCat,                 // Concatenation
+    kStar,                // Series
+    kPlus,                // At least one series
+    kQuestion,            // One or nothing
+    kLeftNlAnchoring,     // Left newline anchoring
+    kLeftNotNlAnchoring,  // Left not newline anchoring
+    kTrailingContext,     // Trailing context
+    kSymbol,              // Symbol
+    kSymbSet,             // Symbol set
+    kEmptySymb,           // Empty symbol
+    kTerm,                // Termination symbol
 };
 
 class PositionalNode;

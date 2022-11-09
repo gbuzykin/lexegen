@@ -41,13 +41,13 @@ letter    [a-zA-Z]
 int       {dig}+
 
 # a C-identifier
-id        ({letter}|_)({letter}|{dig}|_)*   
+id        ({letter}|_)({letter}|{dig}|_)*
 
 # a floating-point number
 real      (({dig}+(\.{dig}*)?)|(\.{dig}+))((e|E)(\+|\-)?{dig}+)?
 
 # white-space character
-ws        [ \t\r\n]       
+ws        [ \t\r\n]
 
 # C-style comment
 comment    \/\* ( [^*\\] | \\(.|\n) | \*+([^*/\\]|\\(.|\n)) )* \*+\/
@@ -101,7 +101,7 @@ As the result two files with default names `lex_defs.h` and `lex_analyzer.inl` a
 is needed to specify the names explicitly the following should be issued:
 
 ```bash
-./lexegen test.lex -o <new-analyzer-file-name> --header-file=<new-defs-file-name> 
+./lexegen test.lex -o <new-analyzer-file-name> --header-file=<new-defs-file-name>
 ```
 
 File `lex_defs.h` contains numerical identifiers for patterns and start conditions (or start
@@ -111,7 +111,7 @@ File `lex_analyzer.inl` contains necessary tables and `lex()` function implement
 `static`.  This function has the following prototype:
 
 ```c
-static int lex(const char* first, const char* last, int** p_sptr, unsigned* p_llen, int has_more);
+static int lex(const char* first, const char* last, int** p_sptr, unsigned* p_llen, int flags);
 ```
 
 where:
@@ -120,7 +120,10 @@ where:
 - `last` - pointer to the character after the last character of input buffer
 - `p_sptr` - pointer to current user-provided DFA stack pointer
 - `p_llen` - pointer to current matched lexeme length
-- `has_more` - should be `0` to treat the end of input buffer as the end of input sequence
+- `flags` - can be a bitwise `or` of the following flags:
+  - `flag_has_more` not to treat the end of input buffer as the end of input sequence
+  - `flag_at_beg_of_line` to tell analyzer that it is at the beginning of a new line (activates
+    patterns starting with `^`)
 
 returns: matched pattern identifier
 
@@ -137,22 +140,22 @@ cell)
 After the function returns and the pattern is matched the stack pointer `*p_sptr` is the same as
 before calling the function.
 
-In case if `has_more` is `0` the stack pointer `*p_sptr` is *always* the same as before the calling.
-If no user-provided pattern is matched it skips one character and returns `predef_pat_default`.  So,
-the function always matches at least one character from the input buffer.  If input buffer is empty,
-it returns `err_end_of_input` (negative).
+In case if `flag_has_more` is not specified the stack pointer `*p_sptr` is *always* the same as
+before the calling.  If no user-provided pattern is matched it skips one character and returns
+`predef_pat_default`.  So, the function always matches at least one character from the input buffer.
+If input buffer is empty, it returns `err_end_of_input` (negative).
 
-If `has_more` is `!= 0`, in case of reaching the end of input buffer the analyzer leaves the stack
-pointer `*p_sptr` as it is and returns `err_end_of_input`.  It gives a chance to add more characters
-to the input sequence and call the `lex()` function again to continue the analysis.  Already
-analyzed part of input is no more needed.  All necessary information is in the state stack.  In
-theory, the old input buffer can be freed, but in practice it will likely be needed in future to
+If `flag_has_more` is not specified the analyzer leaves the stack pointer `*p_sptr` as it is and
+returns `err_end_of_input` in case of reaching the end of input buffer.  It gives a chance to add
+more characters to the input sequence and call the `lex()` function again to continue the analysis.
+Already analyzed part of input is no more needed.  All necessary information is in the state stack.
+In theory, the old input buffer can be freed, but in practice it will likely be needed in future to
 concatenate the full lexeme.
 
 User-provided DFA stack must have the same count of free cells as the length of the longest possible
 lexeme, or `last - first` if we must deal with lexemes of arbitrary length.  The other approach is
 to trim input buffer in case if it is longer than free range in user-provided DFA stack and to
-facilitate `has_more` flag.  The probable code will look like this:
+facilitate `flag_has_more` flag.  The probable code will look like this:
 
 ```cpp
 unsigned llen = 0;
@@ -271,8 +274,14 @@ These rules are used to compose regular expressions for definitions or patterns:
 - `r|s` either an `r` or an `s`
 - `r/s` an `r` but only if it is followed by an `s`.  The text matched by `s` is included when
   determining whether this rule is the "longest match", but is then returned to the input.  So the
-  returned lexeme is only the text matched by `r`.  This type of pattern is called trailing
-  context".
+  returned lexeme is only the text matched by `r`.  This type of pattern is called "trailing
+  context".  It should be the top pattern operator, UB otherwise.
+- `^r` an `r`, but only at the beginning of a line (i.e., when `flag_at_beg_of_line` flag is
+  specified).  It should be the first pattern operator, it is ignored otherwise.
+- `!^r` an `r`, but only *not* at the beginning of a line (i.e., when `flag_at_beg_of_line` flag is
+  *not* specified).  It should be the first pattern operator, it is ignored otherwise.
+- `r$` an `r`, but only at the end of a line (i.e., just before a newline).  Equivalent to `r/\n`.
+  Note that the end of input is not treated as a newline character, so it is not the end of a line.
 
 Note that ' ', FF, CR, HT, or VT characters (bytes) are skipped while parsing regular expressions,
 use `\x20`, `\f`, `\r`, `\t`, or `\v` instead.  Also zero '\0' character (byte) is always treated as

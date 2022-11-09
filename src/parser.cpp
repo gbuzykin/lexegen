@@ -224,6 +224,22 @@ std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
                     or_node->setLeft(std::move(node_stack.back()));
                     node_stack.back() = std::move(or_node);
                 } break;
+                case parser_detail::act_left_nl_anchoring: {  // Left newline anchoring
+                    auto left_nl_anchoring = std::make_unique<Node>(NodeType::kLeftNlAnchoring);
+                    left_nl_anchoring->setLeft(std::move(node_stack.back()));
+                    node_stack.back() = std::move(left_nl_anchoring);
+                } break;
+                case parser_detail::act_left_not_nl_anchoring: {  // Left newline anchoring
+                    auto left_not_nl_anchoring = std::make_unique<Node>(NodeType::kLeftNotNlAnchoring);
+                    left_not_nl_anchoring->setLeft(std::move(node_stack.back()));
+                    node_stack.back() = std::move(left_not_nl_anchoring);
+                } break;
+                case parser_detail::act_right_nl_anchoring: {  // Right newline anchoring: '/\n' equivalent
+                    auto right_nl_anchoring = std::make_unique<TrailingContextNode>();
+                    right_nl_anchoring->setLeft(std::move(node_stack.back()));
+                    right_nl_anchoring->setRight(std::make_unique<SymbNode>('\n'));
+                    node_stack.back() = std::move(right_nl_anchoring);
+                } break;
                 case parser_detail::act_cat: {  // Cat
                     auto cat_node = std::make_unique<Node>(NodeType::kCat);
                     cat_node->setRight(std::move(node_stack.back()));

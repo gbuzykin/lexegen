@@ -24,17 +24,26 @@ bool DfaBuilder::isPatternWithTrailingContext(unsigned n_pat) const {
     });
 }
 
+bool DfaBuilder::hasPatternsWithLeftNlAnchoring() const {
+    return uxs::any_of(patterns_, [](const auto& pat) {
+        return pat.syn_tree->getLeft()->getType() == NodeType::kLeftNlAnchoring ||
+               pat.syn_tree->getLeft()->getType() == NodeType::kLeftNotNlAnchoring;
+    });
+}
+
 void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
     std::vector<PositionalNode*> positions;
     std::vector<ValueSet> states;
-    sc_count_ = sc_count;
+
+    bool left_nl_anchoring = hasPatternsWithLeftNlAnchoring();
+    start_state_count_ = sc_count + (left_nl_anchoring ? sc_count : 0);
 
     // Scatter positions and calculate node functions
     positions.reserve(1024);
     for (const auto& pat : patterns_) { pat.syn_tree->calcFunctions(positions); }
 
     logger::info(file_name_).format(" - pattern count: {}", patterns_.size());
-    logger::info(file_name_).format(" - S-state count: {}", sc_count_);
+    logger::info(file_name_).format(" - S-state count: {}", start_state_count_);
     logger::info(file_name_).format(" - position count: {}", positions.size());
 
     auto calc_eps_closure = [&positions](const ValueSet& T) {
@@ -53,17 +62,28 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
     };
 
     std::vector<unsigned> pending_states;
-    states.reserve(100 * sc_count_);
-    Dtran_.reserve(100 * sc_count_);
-    pending_states.reserve(100 * sc_count_);
+    states.reserve(100 * start_state_count_);
+    Dtran_.reserve(100 * start_state_count_);
+    pending_states.reserve(100 * start_state_count_);
 
     // Add start states
-    for (unsigned sc = 0; sc < sc_count_; ++sc) {
+    for (unsigned sc = 0; sc < sc_count; ++sc) {
         ValueSet S;
         for (const auto& pat : patterns_) {
-            if (pat.sc.contains(sc)) { S |= pat.syn_tree->getFirstpos(); }
+            if (pat.sc.contains(sc) && pat.syn_tree->getLeft()->getType() != NodeType::kLeftNlAnchoring) {
+                S |= pat.syn_tree->getFirstpos();
+            }
         }
         pending_states.push_back(add_state(calc_eps_closure(S)));
+        if (left_nl_anchoring) {
+            ValueSet S;
+            for (const auto& pat : patterns_) {
+                if (pat.sc.contains(sc) && pat.syn_tree->getLeft()->getType() != NodeType::kLeftNotNlAnchoring) {
+                    S |= pat.syn_tree->getFirstpos();
+                }
+            }
+            pending_states.push_back(add_state(calc_eps_closure(S)));
+        }
     }
 
     // Calculate other states and build DFA
@@ -185,7 +205,7 @@ void DfaBuilder::optimize() {
     std::unordered_map<unsigned, unsigned> pattern_groups;
     for (unsigned state = 0; state < Dtran_.size(); ++state) {
         unsigned group = 0;
-        if (state < sc_count_ || !lls_[state].empty()) {
+        if (state < start_state_count_ || !lls_[state].empty()) {
             group = static_cast<unsigned>(group_main_state.size());
             group_main_state.push_back(state);
             if (accept_[state] > 0) { pattern_groups.emplace(accept_[state], group); }
@@ -256,7 +276,7 @@ void DfaBuilder::optimize() {
 
     // Delete `dead` groups
     unsigned dead_group_count = 0;
-    for (unsigned group = sc_count_; group < group_main_state.size(); ++group) {
+    for (unsigned group = start_state_count_; group < group_main_state.size(); ++group) {
         if (group_main_state[group] >= 0 && accept_[group_main_state[group]] == 0 && is_dead_group(group)) {
             group_main_state[group] = -1;  // Mark state group as unused
             ++dead_group_count;
