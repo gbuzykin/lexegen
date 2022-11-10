@@ -418,35 +418,74 @@ int Parser::lex() {
                 sset_is_inverted = pat == lex_detail::pat_regex_symb_set_inv;
                 sset_range_flag = false;
                 sset_last = 0;
-                tkn_.val = ValueSet();
+                tkn_.val.emplace<ValueSet>();
                 state_stack_.push_back(lex_detail::sc_symb_set);
             } break;
-            case lex_detail::pat_regex_symb_set_seq: {
+            case lex_detail::pat_symb_set_seq: {
+                auto& valset = std::get<ValueSet>(tkn_.val);
                 if (sset_range_flag) {
-                    std::get<ValueSet>(tkn_.val).addValues(sset_last, static_cast<unsigned char>(*lexeme));
+                    valset.addValues(sset_last, static_cast<unsigned char>(*lexeme));
                     sset_range_flag = false;
                 }
                 sset_last = static_cast<unsigned char>(lexeme[llen - 1]);
-                for (unsigned n = 0; n < llen; ++n) {
-                    std::get<ValueSet>(tkn_.val).addValue(static_cast<unsigned char>(lexeme[n]));
-                }
+                for (unsigned n = 0; n < llen; ++n) { valset.addValue(static_cast<unsigned char>(lexeme[n])); }
             } break;
-            case lex_detail::pat_regex_symb_set_range: {
+            case lex_detail::pat_symb_set_range: {
                 if (!sset_range_flag && sset_last != '\0') {
                     sset_range_flag = true;
                 } else {
-                    escape = '-';  // Treat `-` as a character
+                    std::get<ValueSet>(tkn_.val).addValue('-');  // Treat `-` as a character
                 }
             } break;
-            case lex_detail::pat_regex_symb_set_close: {
-                if (sset_range_flag) { std::get<ValueSet>(tkn_.val).addValue('-'); }  // Treat `-` as a character
-                if (sset_is_inverted) { std::get<ValueSet>(tkn_.val) ^= ValueSet(1, 255); }
+            case lex_detail::pat_symb_set_class: {  // [:{id}:]
+                auto id = std::string_view(lexeme + 2, llen - 4);
+                auto& valset = std::get<ValueSet>(tkn_.val);
+                if (id == "alnum") {
+                    valset.addValues('A', 'Z').addValues('a', 'z').addValues('0', '9');
+                } else if (id == "alpha") {
+                    valset.addValues('A', 'Z').addValues('a', 'z');
+                } else if (id == "blank") {
+                    valset.addValue(' ').addValue('t');
+                } else if (id == "cntrl") {
+                    valset.addValues(1, 0x1f).addValue(0x7f);
+                } else if (id == "digit") {
+                    valset.addValues('0', '9');
+                } else if (id == "graph") {
+                    valset.addValues(0x21, 0x7e);
+                } else if (id == "lower") {
+                    valset.addValues('a', 'z');
+                } else if (id == "print") {
+                    valset.addValues(0x20, 0x7e);
+                } else if (id == "punct") {
+                    for (unsigned char ch : std::string_view("][!\"#$%&\'()*+,./:;<=>?@\\^_`{|}~-")) {
+                        valset.addValue(ch);
+                    }
+                } else if (id == "space") {
+                    valset.addValues(0x9, 0xd).addValue(' ');
+                } else if (id == "upper") {
+                    valset.addValues('A', 'Z');
+                } else if (id == "xdigit") {
+                    valset.addValues('A', 'F').addValues('a', 'f').addValues('0', '9');
+                } else {
+                    tkn_.loc.col_first = tkn_.loc.col_last - llen + 1;
+                    logger::error(*this, tkn_.loc).format("unknown character class");
+                    return parser_detail::tt_lexical_error;
+                }
+                if (sset_range_flag) {  // Treat `-` as a character
+                    valset.addValue('-');
+                    sset_range_flag = false;
+                }
+            } break;
+            case lex_detail::pat_symb_set_close: {
+                auto& valset = std::get<ValueSet>(tkn_.val);
+                if (sset_range_flag) { valset.addValue('-'); }  // Treat `-` as a character
+                if (sset_is_inverted) { valset ^= ValueSet(1, 255); }
                 state_stack_.pop_back();
                 return parser_detail::tt_sset;
             } break;
             case lex_detail::pat_regex_dot: {
-                tkn_.val = ValueSet(1, 255);
-                std::get<ValueSet>(tkn_.val).removeValue('\n');
+                auto& valset = tkn_.val.emplace<ValueSet>(1, 255);
+                valset.removeValue('\n');
                 return parser_detail::tt_sset;
             } break;
             case lex_detail::pat_regex_symb: {
@@ -458,7 +497,7 @@ int Parser::lex() {
                 return parser_detail::tt_id;
             } break;
             case lex_detail::pat_regex_left_curly_brace: {
-                state_stack_.push_back(lex_detail::sc_regex_curly_braces);
+                state_stack_.push_back(lex_detail::sc_curly_braces);
                 return '{';
             } break;
             case lex_detail::pat_regex_right_curly_brace: {
@@ -505,11 +544,12 @@ int Parser::lex() {
             switch (state_stack_.back()) {
                 case lex_detail::sc_string: *str_end++ = *escape; break;
                 case lex_detail::sc_symb_set: {
+                    auto& valset = std::get<ValueSet>(tkn_.val);
                     if (sset_range_flag) {
-                        std::get<ValueSet>(tkn_.val).addValues(sset_last, static_cast<unsigned char>(*escape));
+                        valset.addValues(sset_last, static_cast<unsigned char>(*escape));
                         sset_range_flag = false;
                     } else {
-                        std::get<ValueSet>(tkn_.val).addValue(static_cast<unsigned char>(*escape));
+                        valset.addValue(static_cast<unsigned char>(*escape));
                     }
                     sset_last = static_cast<unsigned char>(*escape);
                 } break;
