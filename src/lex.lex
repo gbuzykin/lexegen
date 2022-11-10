@@ -1,13 +1,13 @@
 %start string
 %start regex
 %start symb_set
-%start regex_curly_braces
+%start curly_braces
 %start sc_list
 
-dig     [0-9]
+dig     [[:digit:]]
 odig    [0-7]
-hdig    [0-9a-fA-F]
-letter  [a-zA-Z]
+hdig    [[:xdigit:]]
+letter  [[:alpha:]]
 num     {dig}+
 id      ({letter}|_)({letter}|{dig}|_)*
 ws      [ \f\r\t\v]
@@ -30,9 +30,10 @@ escape_other  <string regex symb_set sc_list> \\.
 string_seq    <string> [^"\\\n]+
 string_close  <string> \"
 
-regex_symb_set_seq      <symb_set> [^\]\-\\\n]+
-regex_symb_set_range    <symb_set> -
-regex_symb_set_close    <symb_set> ]
+symb_set_seq      <symb_set> [^\[\]\-\\\n]+
+symb_set_range    <symb_set> -
+symb_set_class    <symb_set> \[:{id}:\]
+symb_set_close    <symb_set> ]
 
 unexpected_nl  <string symb_set> \n
 
@@ -43,15 +44,15 @@ regex_symb_set_inv        <regex sc_list> \[\^
 regex_dot                 <regex sc_list> \.
 regex_id                  <regex sc_list> \{{id}}
 regex_left_curly_brace    <regex sc_list> \{
-regex_nl                  <regex sc_list regex_curly_braces> \n
-regex_right_curly_brace   <regex_curly_braces> }
+regex_nl                  <regex sc_list curly_braces> \n
+regex_right_curly_brace   <curly_braces> }
 regex_symb                <regex sc_list> [^"|/*+?^$!()]
 
 start    <initial> "%start"
 option   <initial> "%option"
 sep      <initial> "%%"
 id       <initial> {id}
-num      <initial regex_curly_braces> {num}
+num      <initial curly_braces> {num}
 comment  <initial> #
 
 nl         \n

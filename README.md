@@ -283,6 +283,31 @@ These rules are used to compose regular expressions for definitions or patterns:
 - `r$` an `r`, but only at the end of a line (i.e., just before a newline).  Equivalent to `r/\n`.
   Note that the end of input is not treated as a newline character, so it is not the end of a line.
 
+In addition to characters and ranges of characters, character classes can also contain character
+class expressions.  These are expressions enclosed inside `[:` and `:]` delimiters (which themselves
+must appear between the `[` and `]` of the character class.  Other elements may occur inside the
+character class, too.  The valid expressions are:
+
+- `[:alnum:]` - alphanumeric characters `[A-Za-z0-9]`
+- `[:alpha:]` - alphabetic characters `[A-Za-z]`
+- `[:blank:]` - space and tab `[ \t]`
+- `[:cntrl:]` - control characters `[\x01-\x1F\x7F]`
+- `[:digit:]` - digits `[0-9]`
+- `[:graph:]` - visible characters `[\x21-\x7E]`
+- `[:lower:]` - lowercase letters `[a-z]`
+- `[:print:]` - visible characters and the space character `[\x20-\x7E]`
+- `[:punct:]` - punctuation characters ``[\]\[!"#$%&'()*+,./:;<=>?@\\^_`{|}~\-]``
+- `[:space:]` - whitespace characters `[ \t\r\n\v\f]`
+- `[:upper:]` - uppercase letters `[A-Z]`
+- `[:xdigit:]` - hexadecimal digits `[A-Fa-f0-9]`
+
+For example, the following character classes are all equivalent:
+
+- `[[:alnum:]]`
+- `[[:alpha:][:digit:]]`
+- `[[:alpha:][0-9]]`
+- `[a-zA-Z0-9]`
+
 Note that ' ', FF, CR, HT, or VT characters (bytes) are skipped while parsing regular expressions,
 use `\x20`, `\f`, `\r`, `\t`, or `\v` instead.  Also zero '\0' character (byte) is always treated as
 not matchable.

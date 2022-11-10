@@ -22,9 +22,10 @@ enum {
     pat_escape_other,
     pat_string_seq,
     pat_string_close,
-    pat_regex_symb_set_seq,
-    pat_regex_symb_set_range,
-    pat_regex_symb_set_close,
+    pat_symb_set_seq,
+    pat_symb_set_range,
+    pat_symb_set_class,
+    pat_symb_set_close,
     pat_unexpected_nl,
     pat_whitespace,
     pat_regex_symb_set,
@@ -52,6 +53,6 @@ enum {
     sc_string,
     sc_regex,
     sc_symb_set,
-    sc_regex_curly_braces,
+    sc_curly_braces,
     sc_sc_list
 };
