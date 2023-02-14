@@ -28,11 +28,11 @@ void outputData(uxs::iobuf& outp, Iter from, Iter to, size_t ntab = 0) {
 
 template<typename Iter>
 void outputArray(uxs::iobuf& outp, std::string_view state_type, std::string_view array_name, Iter from, Iter to) {
-    uxs::fprint(outp, "\nstatic {} {}", state_type, array_name);
+    uxs::print(outp, "\nstatic {} {}", state_type, array_name);
     if (from == to) {
         outp.write("[1] = { 0 };\n");
     } else {
-        uxs::fprintln(outp, "[{}] = {{", std::distance(from, to));
+        uxs::println(outp, "[{}] = {{", std::distance(from, to));
         outputData(outp, from, to, 4);
         outp.write("};\n");
     }
@@ -124,9 +124,9 @@ void outputLexEngine(uxs::iobuf& outp, const EngineInfo& info) {
     // clang-format on
     outp.put('\n');
     for (const auto& l : text0) {
-        uxs::fprintln(outp, l, info.state_type,
-                      info.has_left_nl_anchoring ? "(*(sptr - 1) << 1) + ((flags & flag_at_beg_of_line) ? 1 : 0)" :
-                                                   "*(sptr - 1)");
+        uxs::println(outp, uxs::make_runtime_string(l), info.state_type,
+                     info.has_left_nl_anchoring ? "(*(sptr - 1) << 1) + ((flags & flag_at_beg_of_line) ? 1 : 0)" :
+                                                  "*(sptr - 1)");
     }
     if (info.compress_level == 0) {
         for (const auto& l : text1_compress0) { outp.write(l).put('\n'); }
@@ -261,19 +261,19 @@ int main(int argc, char** argv) {
             ofile.write("\nenum {\n");
             ofile.write("    err_end_of_input = -1,\n");
             ofile.write("    predef_pat_default = 0,\n");
-            for (const auto& pat : parser.getPatterns()) { uxs::fprintln(ofile, "    pat_{},", pat.id); }
+            for (const auto& pat : parser.getPatterns()) { uxs::println(ofile, "    pat_{},", pat.id); }
             ofile.write("    total_pattern_count\n");
             ofile.write("};\n");
             if (!start_conditions.empty()) {
                 ofile.write("\nenum {\n");
                 if (start_conditions.size() > 1) {
-                    uxs::fprintln(ofile, "    sc_{} = 0,", start_conditions[0]);
+                    uxs::println(ofile, "    sc_{} = 0,", start_conditions[0]);
                     for (size_t i = 1; i < start_conditions.size() - 1; ++i) {
-                        uxs::fprintln(ofile, "    sc_{},", start_conditions[i]);
+                        uxs::println(ofile, "    sc_{},", start_conditions[i]);
                     }
-                    uxs::fprintln(ofile, "    sc_{}", start_conditions[start_conditions.size() - 1]);
+                    uxs::println(ofile, "    sc_{}", start_conditions[start_conditions.size() - 1]);
                 } else {
-                    uxs::fprintln(ofile, "    sc_{} = 0", start_conditions[0]);
+                    uxs::println(ofile, "    sc_{} = 0", start_conditions[0]);
                 }
                 ofile.write("};\n");
             }
@@ -296,7 +296,7 @@ int main(int argc, char** argv) {
                         for (size_t j = 0; j < Dtran.size(); ++j) {
                             std::copy_n(Dtran[j].data(), dtran_width, std::back_inserter(dtran_data));
                         }
-                        uxs::fprintln(ofile, "\nenum {{ dtran_width = {} }};", dtran_width);
+                        uxs::println(ofile, "\nenum {{ dtran_width = {} }};", dtran_width);
                         outputArray(ofile, eng_info.state_type, "Dtran", dtran_data.begin(), dtran_data.end());
                     }
                 } else {
