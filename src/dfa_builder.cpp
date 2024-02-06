@@ -42,9 +42,9 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
     positions.reserve(1024);
     for (const auto& pat : patterns_) { pat.syn_tree->calcFunctions(positions); }
 
-    logger::info(file_name_).format(" - pattern count: {}", patterns_.size());
-    logger::info(file_name_).format(" - S-state count: {}", start_state_count_);
-    logger::info(file_name_).format(" - position count: {}", positions.size());
+    logger::info(file_name_).println(" - pattern count: {}", patterns_.size());
+    logger::info(file_name_).println(" - S-state count: {}", start_state_count_);
+    logger::info(file_name_).println(" - position count: {}", positions.size());
 
     auto calc_eps_closure = [&positions](const ValueSet& T) {
         ValueSet closure = T;
@@ -191,8 +191,8 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
         lls_.emplace_back(get_lls_patterns(T));
     }
 
-    logger::info(file_name_).format(" - meta-symbol count: {}", meta_count_);
-    logger::info(file_name_).format(" - state count: {}", Dtran_.size());
+    logger::info(file_name_).println(" - meta-symbol count: {}", meta_count_);
+    logger::info(file_name_).println(" - state count: {}", Dtran_.size());
 }
 
 void DfaBuilder::optimize() {
@@ -247,7 +247,7 @@ void DfaBuilder::optimize() {
     unsigned group_count = static_cast<unsigned>(
         std::count_if(group_main_state.begin(), group_main_state.end(), [](int state) { return state >= 0; }));
 
-    logger::info(file_name_).format(" - state group count: {}", group_count);
+    logger::info(file_name_).println(" - state group count: {}", group_count);
 
     auto is_dead_group = [&state_group, &group_main_state, meta_count = meta_count_, &Dtran = Dtran_,
                           &accept = accept_](unsigned group) {
@@ -283,7 +283,7 @@ void DfaBuilder::optimize() {
         }
     }
 
-    logger::info(file_name_).format(" - dead group count: {}", dead_group_count);
+    logger::info(file_name_).println(" - dead group count: {}", dead_group_count);
 
     auto get_main_state = [&state_group, &group_main_state](unsigned state) {
         return group_main_state[state_group[state]];
@@ -313,7 +313,7 @@ void DfaBuilder::optimize() {
     accept_.resize(new_state_count);
     lls_.resize(new_state_count);
 
-    logger::info(file_name_).format(" - new state count: {}", Dtran_.size());
+    logger::info(file_name_).println(" - new state count: {}", Dtran_.size());
 }
 
 void DfaBuilder::makeCompressedDtran(std::vector<int>& def, std::vector<int>& base, std::vector<int>& next,

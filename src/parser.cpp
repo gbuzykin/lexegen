@@ -26,8 +26,8 @@ std::string_view getNextLine(const char* text, const char* boundary) {
 Parser::Parser(uxs::iobuf& input, std::string file_name) : input_(input), file_name_(std::move(file_name)) {}
 
 bool Parser::parse() {
-    std::streampos pos = input_.seek(0, uxs::seekdir::kEnd);
-    if (pos < 0) { return false; }
+    auto pos = input_.seek(0, uxs::seekdir::end);
+    if (pos == uxs::iobuf::traits_type::npos()) { return false; }
     size_t file_sz = static_cast<size_t>(pos);
     text_ = std::make_unique<char[]>(file_sz);
 
@@ -52,7 +52,7 @@ bool Parser::parse() {
                     return false;
                 }
                 if (uxs::contains(start_conditions_, std::get<std::string_view>(tkn_.val))) {
-                    logger::error(*this, tkn_.loc).format("start condition is already defined");
+                    logger::error(*this, tkn_.loc).println("start condition is already defined");
                     return false;
                 }
                 start_conditions_.emplace_back(std::get<std::string_view>(tkn_.val));
@@ -60,7 +60,7 @@ bool Parser::parse() {
             case parser_detail::tt_id: {  // Regular definition
                 std::string_view name = std::get<std::string_view>(tkn_.val);
                 if (uxs::contains(definitions_, name)) {
-                    logger::error(*this, tkn_.loc).format("regular expression is already defined");
+                    logger::error(*this, tkn_.loc).println("regular expression is already defined");
                     return false;
                 }
 
@@ -94,7 +94,7 @@ bool Parser::parse() {
         if ((tt = lex()) == parser_detail::tt_id) {
             std::string_view name = std::get<std::string_view>(tkn_.val);
             if (uxs::contains_if(patterns_, [&](const auto& pat) { return pat.id == name; })) {
-                logger::error(*this, tkn_.loc).format("pattern is already defined");
+                logger::error(*this, tkn_.loc).println("pattern is already defined");
                 return false;
             }
 
@@ -108,7 +108,7 @@ bool Parser::parse() {
                     if ((tt = lex()) == parser_detail::tt_id) {
                         auto [sc_it, found] = uxs::find(start_conditions_, std::get<std::string_view>(tkn_.val));
                         if (!found) {
-                            logger::error(*this, tkn_.loc).format("undefined start condition");
+                            logger::error(*this, tkn_.loc).println("undefined start condition");
                             return false;
                         }
                         sc.addValue(static_cast<unsigned>(sc_it - start_conditions_.begin()));
@@ -141,7 +141,7 @@ bool Parser::parse() {
     } while (tt != parser_detail::tt_sep);
 
     if (patterns_.empty()) {
-        logger::error(file_name_).format("no patterns defined");
+        logger::error(file_name_).println("no patterns defined");
         return false;
     }
     return true;
@@ -289,7 +289,7 @@ std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
                 case parser_detail::tt_id: {  // Insert subtree
                     auto [pat_it, found] = uxs::find(definitions_, std::get<std::string_view>(tkn_.val));
                     if (!found) {
-                        logger::error(*this, tkn_.loc).format("undefined regular expression");
+                        logger::error(*this, tkn_.loc).println("undefined regular expression");
                         return {nullptr, tt};
                     }
                     node_stack.emplace_back(pat_it->second->cloneTree());
@@ -329,9 +329,9 @@ int Parser::lex() {
     char *str_start = nullptr, *str_end = nullptr;
     tkn_.loc = {ln_, col_, col_};
 
-    auto print_unterm_token_msg = [this] { logger::error(*this, tkn_.loc).format("unterminated token"); };
+    auto print_unterm_token_msg = [this] { logger::error(*this, tkn_.loc).println("unterminated token"); };
     auto print_zero_escape_char_msg = [this] {
-        logger::error(*this, tkn_.loc).format("zero escape character is not allowed");
+        logger::error(*this, tkn_.loc).println("zero escape character is not allowed");
     };
 
     while (true) {
@@ -468,7 +468,7 @@ int Parser::lex() {
                     valset.addValues('A', 'F').addValues('a', 'f').addValues('0', '9');
                 } else {
                     tkn_.loc.col_first = tkn_.loc.col_last - llen + 1;
-                    logger::error(*this, tkn_.loc).format("unknown character class");
+                    logger::error(*this, tkn_.loc).println("unknown character class");
                     return parser_detail::tt_lexical_error;
                 }
                 if (sset_range_flag) {  // Treat `-` as a character
@@ -572,5 +572,5 @@ void Parser::logSyntaxError(int tt) const {
         case parser_detail::tt_lexical_error: return;
         default: msg = "unexpected token"; break;
     }
-    logger::error(*this, tkn_.loc).format(uxs::make_runtime_string(msg));
+    logger::error(*this, tkn_.loc).println(uxs::make_runtime_string(msg));
 }

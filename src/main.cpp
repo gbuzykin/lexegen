@@ -30,11 +30,11 @@ template<typename Iter>
 void outputArray(uxs::iobuf& outp, std::string_view state_type, std::string_view array_name, Iter from, Iter to) {
     uxs::print(outp, "\nstatic {} {}", state_type, array_name);
     if (from == to) {
-        outp.write("[1] = { 0 };\n");
+        uxs::print(outp, "[1] = {{ 0 }};\n");
     } else {
-        uxs::println(outp, "[{}] = {{", std::distance(from, to));
+        uxs::print(outp, "[{}] = {{\n", std::distance(from, to));
         outputData(outp, from, to, 4);
-        outp.write("};\n");
+        uxs::print(outp, "}};\n");
     }
 }
 
@@ -180,30 +180,30 @@ int main(int argc, char** argv) {
         auto parse_result = cli->parse(argc, argv);
         if (show_help) {
             for (auto const* node = parse_result.node; node; node = node->get_parent()) {
-                if (node->get_type() == uxs::cli::node_type::kCommand) {
+                if (node->get_type() == uxs::cli::node_type::command) {
                     uxs::stdbuf::out.write(static_cast<const uxs::cli::basic_command<char>&>(*node).make_man_page(true));
                     break;
                 }
             }
             return 0;
         } else if (show_version) {
-            uxs::stdbuf::out.write(XSTR(VERSION)).endl();
+            uxs::println(uxs::stdbuf::out, "{}", XSTR(VERSION));
             return 0;
-        } else if (parse_result.status != uxs::cli::parsing_status::kOk) {
+        } else if (parse_result.status != uxs::cli::parsing_status::ok) {
             switch (parse_result.status) {
-                case uxs::cli::parsing_status::kUnknownOption: {
-                    logger::fatal().format("unknown command line option `{}`", argv[parse_result.arg_count]);
+                case uxs::cli::parsing_status::unknown_option: {
+                    logger::fatal().println("unknown command line option `{}`", argv[parse_result.arg_count]);
                 } break;
-                case uxs::cli::parsing_status::kInvalidValue: {
+                case uxs::cli::parsing_status::invalid_value: {
                     if (parse_result.arg_count < argc) {
-                        logger::fatal().format("invalid command line argument `{}`", argv[parse_result.arg_count]);
+                        logger::fatal().println("invalid command line argument `{}`", argv[parse_result.arg_count]);
                     } else {
-                        logger::fatal().format("expected command line argument after `{}`",
-                                               argv[parse_result.arg_count - 1]);
+                        logger::fatal().println("expected command line argument after `{}`",
+                                                argv[parse_result.arg_count - 1]);
                     }
                 } break;
-                case uxs::cli::parsing_status::kUnspecifiedValue: {
-                    if (input_file_name.empty()) { logger::fatal().format("no input file specified"); }
+                case uxs::cli::parsing_status::unspecified_value: {
+                    if (input_file_name.empty()) { logger::fatal().println("no input file specified"); }
                 } break;
                 default: break;
             }
@@ -212,7 +212,7 @@ int main(int argc, char** argv) {
 
         uxs::filebuf ifile(input_file_name.c_str(), "r");
         if (!ifile) {
-            logger::fatal().format("could not open input file `{}`", input_file_name);
+            logger::fatal().println("could not open input file `{}`", input_file_name);
             return -1;
         }
 
@@ -226,7 +226,7 @@ int main(int argc, char** argv) {
         for (auto& pat : parser.getPatterns()) { dfa_builder.addPattern(std::move(pat.syn_tree), ++n_pat, pat.sc); }
 
         // Build analyzer
-        logger::info(input_file_name).format("\033[1;34mbuilding analyzer...\033[0m");
+        logger::info(input_file_name).println("\033[1;34mbuilding analyzer...\033[0m");
         dfa_builder.build(static_cast<unsigned>(start_conditions.size()), case_insensitive);
 
         size_t state_sz = sizeof(int);
@@ -237,35 +237,35 @@ int main(int argc, char** argv) {
         }
 
         logger::info(input_file_name)
-            .format(" - transition table size: {} bytes",
-                    dfa_builder.getMetaCount() * dfa_builder.getDtran().size() * state_sz);
-        logger::info(input_file_name).format("\033[1;32mdone\033[0m");
+            .println(" - transition table size: {} bytes",
+                     dfa_builder.getMetaCount() * dfa_builder.getDtran().size() * state_sz);
+        logger::info(input_file_name).println("\033[1;32mdone\033[0m");
 
         if (optimization_level > 0) {
-            logger::info(input_file_name).format("\033[1;34moptimizing states...\033[0m");
+            logger::info(input_file_name).println("\033[1;34moptimizing states...\033[0m");
             dfa_builder.optimize();
 
             logger::info(input_file_name)
-                .format(" - transition table size: {} bytes",
-                        dfa_builder.getMetaCount() * dfa_builder.getDtran().size() * state_sz);
-            logger::info(input_file_name).format("\033[1;32mdone\033[0m");
+                .println(" - transition table size: {} bytes",
+                         dfa_builder.getMetaCount() * dfa_builder.getDtran().size() * state_sz);
+            logger::info(input_file_name).println("\033[1;32mdone\033[0m");
         }
 
         if (uxs::filebuf ofile(defs_file_name.c_str(), "w"); ofile) {
-            ofile.write("/* Lexegen autogenerated definition file - do not edit! */\n");
-            ofile.write("/* clang-format off */\n");
-            ofile.write("\nenum {\n");
-            ofile.write("    flag_has_more = 1,\n");
-            ofile.write("    flag_at_beg_of_line = 2\n");
-            ofile.write("};\n");
-            ofile.write("\nenum {\n");
-            ofile.write("    err_end_of_input = -1,\n");
-            ofile.write("    predef_pat_default = 0,\n");
+            uxs::print(ofile, "/* Lexegen autogenerated definition file - do not edit! */\n");
+            uxs::print(ofile, "/* clang-format off */\n");
+            uxs::print(ofile, "\nenum {{\n");
+            uxs::print(ofile, "    flag_has_more = 1,\n");
+            uxs::print(ofile, "    flag_at_beg_of_line = 2\n");
+            uxs::print(ofile, "}};\n");
+            uxs::print(ofile, "\nenum {{\n");
+            uxs::print(ofile, "    err_end_of_input = -1,\n");
+            uxs::print(ofile, "    predef_pat_default = 0,\n");
             for (const auto& pat : parser.getPatterns()) { uxs::println(ofile, "    pat_{},", pat.id); }
-            ofile.write("    total_pattern_count\n");
-            ofile.write("};\n");
+            uxs::print(ofile, "    total_pattern_count\n");
+            uxs::print(ofile, "}};\n");
             if (!start_conditions.empty()) {
-                ofile.write("\nenum {\n");
+                uxs::print(ofile, "\nenum {{\n");
                 if (start_conditions.size() > 1) {
                     uxs::println(ofile, "    sc_{} = 0,", start_conditions[0]);
                     for (size_t i = 1; i < start_conditions.size() - 1; ++i) {
@@ -275,15 +275,15 @@ int main(int argc, char** argv) {
                 } else {
                     uxs::println(ofile, "    sc_{} = 0", start_conditions[0]);
                 }
-                ofile.write("};\n");
+                uxs::print(ofile, "}};\n");
             }
         } else {
-            logger::error().format("could not open output file `{}`", defs_file_name);
+            logger::error().println("could not open output file `{}`", defs_file_name);
         }
 
         if (uxs::filebuf ofile(analyzer_file_name.c_str(), "w"); ofile) {
-            ofile.write("/* Lexegen autogenerated analyzer file - do not edit! */\n");
-            ofile.write("/* clang-format off */\n");
+            uxs::print(ofile, "/* Lexegen autogenerated analyzer file - do not edit! */\n");
+            uxs::print(ofile, "/* clang-format off */\n");
             const auto& symb2meta = dfa_builder.getSymb2Meta();
             const auto& Dtran = dfa_builder.getDtran();
             if (eng_info.compress_level > 0) {
@@ -301,13 +301,13 @@ int main(int argc, char** argv) {
                     }
                 } else {
                     std::vector<int> def, base, next, check;
-                    logger::info(input_file_name).format("\033[1;34mcompressing tables...\033[0m");
+                    logger::info(input_file_name).println("\033[1;34mcompressing tables...\033[0m");
                     dfa_builder.makeCompressedDtran(def, base, next, check);
 
                     logger::info(input_file_name)
-                        .format(" - total compressed transition table size: {} bytes",
-                                (def.size() + next.size() + check.size()) * state_sz + base.size() * sizeof(int));
-                    logger::info(input_file_name).format("\033[1;32mdone\033[0m");
+                        .println(" - total compressed transition table size: {} bytes",
+                                 (def.size() + next.size() + check.size()) * state_sz + base.size() * sizeof(int));
+                    logger::info(input_file_name).println("\033[1;32mdone\033[0m");
 
                     outputArray(ofile, eng_info.state_type, "def", def.begin(), def.end());
                     outputArray(ofile, "int", "base", base.begin(), base.end());
@@ -360,10 +360,10 @@ int main(int argc, char** argv) {
             }
             outputLexEngine(ofile, eng_info);
         } else {
-            logger::error().format("could not open output file `{}`", analyzer_file_name);
+            logger::error().println("could not open output file `{}`", analyzer_file_name);
         }
 
         return 0;
-    } catch (const std::exception& e) { logger::fatal().format("exception caught: {}", e.what()); }
+    } catch (const std::exception& e) { logger::fatal().println("exception caught: {}", e.what()); }
     return -1;
 }
