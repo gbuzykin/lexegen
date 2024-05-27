@@ -203,7 +203,7 @@ std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
 
     sstack.push_back(parser_detail::sc_initial);  // Push initial state
     while (true) {
-        sstack.reserve();
+        sstack.reserve(1);
         int act = parser_detail::parse(tt, sstack.data(), sstack.p_curr(), 0);
         if (act < 0) {
             logSyntaxError(tt);
@@ -572,5 +572,5 @@ void Parser::logSyntaxError(int tt) const {
         case parser_detail::tt_lexical_error: return;
         default: msg = "unexpected token"; break;
     }
-    logger::error(*this, tkn_.loc).println(uxs::make_runtime_string(msg));
+    logger::error(*this, tkn_.loc).println("{}", msg);
 }
