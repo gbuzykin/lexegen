@@ -125,7 +125,7 @@ void outputLexEngine(uxs::iobuf& outp, const EngineInfo& info) {
     outp.put('\n');
     for (const auto& l : text0) {
         uxs::print(
-            outp, uxs::make_runtime_string(l), info.state_type,
+            outp, uxs::runtime_format{l}, info.state_type,
             info.has_left_nl_anchoring ? "(*(sptr - 1) << 1) + ((flags & flag_at_beg_of_line) ? 1 : 0)" : "*(sptr - 1)")
             .put('\n');
     }
