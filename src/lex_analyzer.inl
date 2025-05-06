@@ -66,10 +66,11 @@ static int lls_list[1] = {
     1
 };
 
-static int lex(const char* first, const char* last, int** p_sptr, unsigned* p_llen, int flags) {
-    int *sptr = *p_sptr, *sptr0 = sptr - *p_llen;
+static int lex(const char* first, const char* last, int** p_sptr, size_t* p_llen, int flags) {
+    int* sptr = *p_sptr;
+    int* sptr0 = sptr - *p_llen;
     int state = *(sptr - 1);
-    while (first < last) { /* Analyze till transition is impossible */
+    while (first != last) { /* Analyze till transition is impossible */
         uint8_t meta = symb2meta[(unsigned char)*first];
         do {
             int l = base[state] + meta;
@@ -84,31 +85,31 @@ static int lex(const char* first, const char* last, int** p_sptr, unsigned* p_ll
     }
     if ((flags & flag_has_more) || sptr == sptr0) {
         *p_sptr = sptr;
-        *p_llen = (unsigned)(sptr - sptr0);
+        *p_llen = (size_t)(sptr - sptr0);
         return err_end_of_input;
     }
 unroll:
     *p_sptr = sptr0;
-    while (sptr != sptr0) { /* Unroll down-to last accepting state */
+    while (sptr != sptr0) { /* Unroll down to last accepting state */
         int n_pat = accept[(state = *(sptr - 1))];
         if (n_pat > 0) {
-            enum { kTrailingContextFlag = 1, kFlagCount = 1 };
+            enum { trailing_context_flag = 1, flag_count = 1 };
             int i;
-            if (!(n_pat & kTrailingContextFlag)) {
-                *p_llen = (unsigned)(sptr - sptr0);
-                return n_pat >> kFlagCount;
+            if (!(n_pat & trailing_context_flag)) {
+                *p_llen = (size_t)(sptr - sptr0);
+                return n_pat >> flag_count;
             }
-            n_pat >>= kFlagCount;
+            n_pat >>= flag_count;
             do {
                 for (i = lls_idx[state]; i < lls_idx[state + 1]; ++i) {
                     if (lls_list[i] == n_pat) {
-                        *p_llen = (unsigned)(sptr - sptr0);
+                        *p_llen = (size_t)(sptr - sptr0);
                         return n_pat;
                     }
                 }
                 state = *(--sptr - 1);
             } while (sptr != sptr0);
-            *p_llen = (unsigned)(sptr - sptr0);
+            *p_llen = (size_t)(sptr - sptr0);
             return n_pat;
         }
         --sptr;
