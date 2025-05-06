@@ -1,7 +1,5 @@
 #include "parser.h"
 
-#include "node.h"
-
 #include "uxs/algorithm.h"
 
 #include <optional>
@@ -28,12 +26,12 @@ Parser::Parser(uxs::iobuf& input, std::string file_name) : input_(input), file_n
 bool Parser::parse() {
     auto pos = input_.seek(0, uxs::seekdir::end);
     if (pos == uxs::iobuf::traits_type::npos()) { return false; }
-    size_t file_sz = static_cast<size_t>(pos);
+    std::size_t file_sz = static_cast<std::size_t>(pos);
     text_ = std::make_unique<char[]>(file_sz);
 
     // Read the whole file
     input_.seek(0);
-    size_t n_read = input_.read(uxs::as_span(text_.get(), file_sz));
+    std::size_t n_read = input_.read(est::as_span(text_.get(), file_sz));
     first_ = text_.get();
     last_ = text_.get() + n_read;
     current_line_ = getNextLine(first_, last_);
@@ -148,7 +146,7 @@ bool Parser::parse() {
 }
 
 namespace {
-std::unique_ptr<Node> makeMultiplicateNode(std::unique_ptr<Node> node, uxs::span<const unsigned> num) {
+std::unique_ptr<Node> makeMultiplicateNode(std::unique_ptr<Node> node, est::span<const unsigned> num) {
     const auto* child = node.get();
     // Mandatory part
     std::unique_ptr<Node> left_subtree;
@@ -204,7 +202,9 @@ std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
     sstack.push_back(parser_detail::sc_initial);  // Push initial state
     while (true) {
         sstack.reserve(1);
-        int act = parser_detail::parse(tt, sstack.data(), sstack.p_curr(), 0);
+        auto* sptr = sstack.endp();
+        int act = parser_detail::parse(tt, sstack.data(), &sptr, 0);
+        sstack.setsize(sptr - sstack.data());
         if (act < 0) {
             logSyntaxError(tt);
             return {nullptr, tt};
@@ -265,17 +265,17 @@ std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
                 } break;
                 case parser_detail::act_mult_exact: {  // Multiplicate node (exact count)
                     num[1] = num[0];
-                    node_stack.back() = makeMultiplicateNode(std::move(node_stack.back()), uxs::as_span(num, 2));
+                    node_stack.back() = makeMultiplicateNode(std::move(node_stack.back()), est::as_span(num, 2));
                 } break;
                 case parser_detail::act_mult_not_more_than: {  // Multiplicate node (not more than given count)
                     num[1] = num[0], num[0] = 0;
-                    node_stack.back() = makeMultiplicateNode(std::move(node_stack.back()), uxs::as_span(num, 2));
+                    node_stack.back() = makeMultiplicateNode(std::move(node_stack.back()), est::as_span(num, 2));
                 } break;
                 case parser_detail::act_mult_not_less_than: {  // Multiplicate node (not less than given count)
-                    node_stack.back() = makeMultiplicateNode(std::move(node_stack.back()), uxs::as_span(num, 1));
+                    node_stack.back() = makeMultiplicateNode(std::move(node_stack.back()), est::as_span(num, 1));
                 } break;
                 case parser_detail::act_mult_range: {  // Multiplicate node (given range)
-                    node_stack.back() = makeMultiplicateNode(std::move(node_stack.back()), uxs::as_span(num, 2));
+                    node_stack.back() = makeMultiplicateNode(std::move(node_stack.back()), est::as_span(num, 2));
                 } break;
             }
         } else if (tt != parser_detail::tt_nl) {
@@ -298,7 +298,7 @@ std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
                     const auto& str = std::get<std::string_view>(tkn_.val);
                     if (!str.empty()) {
                         std::unique_ptr<Node> str_node = std::make_unique<SymbNode>(static_cast<unsigned char>(str[0]));
-                        for (size_t i = 1; i < str.size(); ++i) {
+                        for (std::size_t i = 1; i < str.size(); ++i) {
                             auto cat_node = std::make_unique<Node>(NodeType::kCat);
                             cat_node->setLeft(std::move(str_node));
                             cat_node->setRight(std::make_unique<SymbNode>(static_cast<unsigned char>(str[i])));
@@ -326,7 +326,8 @@ std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
 int Parser::lex() {
     bool sset_is_inverted = false, sset_range_flag = false;
     unsigned sset_last = 0;
-    char *str_start = nullptr, *str_end = nullptr;
+    char* str_start = nullptr;
+    char* str_end = nullptr;
     tkn_.loc = {ln_, col_, col_};
 
     auto print_unterm_token_msg = [this] { logger::error(*this, tkn_.loc).println("unterminated token"); };
@@ -335,35 +336,32 @@ int Parser::lex() {
     };
 
     while (true) {
-        int pat = 0;
-        unsigned llen = 0;
-        const char *first = first_, *lexeme = first;
+        const char* first = first_;
+        const char* lexeme = first;
         if (first > text_.get() && *(first - 1) == '\n') {
             current_line_ = getNextLine(first, last_);
             ++ln_, col_ = 1;
             tkn_.loc = {ln_, col_, col_};
         }
+        int pat = 0;
+        std::size_t llen = 0;
         while (true) {
-            bool stack_limitation = false;
             const char* last = last_;
-            if (state_stack_.avail() < static_cast<size_t>(last - first)) {
-                last = first + state_stack_.avail();
-                stack_limitation = true;
-            }
-            pat = lex_detail::lex(first, last, state_stack_.p_curr(), &llen, stack_limitation);
-            if (pat >= lex_detail::predef_pat_default) {
-                break;
-            } else if (stack_limitation) {
-                // enlarge state stack and continue analysis
-                state_stack_.reserve(llen);
-                first = last;
-            } else {
+            if (state_stack_.avail() < static_cast<std::size_t>(last - first)) { last = first + state_stack_.avail(); }
+            auto* sptr = state_stack_.endp();
+            pat = lex_detail::lex(first, last, &sptr, &llen, last != last_ ? lex_detail::flag_has_more : 0);
+            state_stack_.setsize(sptr - state_stack_.data());
+            if (pat >= lex_detail::predef_pat_default) { break; }
+            if (last == last_) {
                 int sc = state_stack_.back();
                 tkn_.loc.col_last = tkn_.loc.col_first;
                 if (sc != lex_detail::sc_string && sc != lex_detail::sc_symb_set) { return parser_detail::tt_eof; }
                 print_unterm_token_msg();
                 return parser_detail::tt_lexical_error;
             }
+            // enlarge state stack and continue analysis
+            state_stack_.reserve(llen);
+            first = last;
         }
         first_ += llen, col_ += llen;
         tkn_.loc.col_last = col_ - 1;

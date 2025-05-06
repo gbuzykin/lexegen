@@ -2,7 +2,7 @@
 
 #include "valset.h"
 
-#include <memory>
+#include <utility>
 #include <vector>
 
 // Node types

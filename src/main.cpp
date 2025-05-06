@@ -1,16 +1,17 @@
 #include "dfa_builder.h"
-#include "node.h"
 #include "parser.h"
 
 #include "uxs/algorithm.h"
 #include "uxs/cli/parser.h"
 #include "uxs/io/filebuf.h"
 
+#include <exception>
+
 #define XSTR(s) STR(s)
 #define STR(s)  #s
 
 template<typename Iter>
-void outputData(uxs::iobuf& outp, Iter from, Iter to, size_t ntab = 0) {
+void outputData(uxs::iobuf& outp, Iter from, Iter to, std::size_t ntab = 0) {
     if (from == to) { return; }
     const unsigned length_limit = 120;
     std::string tab(ntab, ' '), line = tab + uxs::to_string(*from);
@@ -46,12 +47,12 @@ struct EngineInfo {
 };
 
 void outputLexEngine(uxs::iobuf& outp, const EngineInfo& info) {
-    // clang-format off
     static constexpr std::string_view text0[] = {
-        "static int lex(const char* first, const char* last, {0}** p_sptr, unsigned* p_llen, int flags) {{",
-        "    {0} *sptr = *p_sptr, *sptr0 = sptr - *p_llen;",
+        "static int lex(const char* first, const char* last, {0}** p_sptr, size_t* p_llen, int flags) {{",
+        "    {0}* sptr = *p_sptr;",
+        "    {0}* sptr0 = sptr - *p_llen;",
         "    {0} state = {1};",
-        "    while (first < last) {{ /* Analyze till transition is impossible */",
+        "    while (first != last) {{ /* Analyze till transition is impossible */",
     };
     static constexpr std::string_view text1[] = {
         "        uint8_t meta = symb2meta[(unsigned char)*first];",
@@ -76,43 +77,39 @@ void outputLexEngine(uxs::iobuf& outp, const EngineInfo& info) {
         "    }",
         "    if ((flags & flag_has_more) || sptr == sptr0) {",
         "        *p_sptr = sptr;",
-        "        *p_llen = (unsigned)(sptr - sptr0);",
+        "        *p_llen = (size_t)(sptr - sptr0);",
         "        return err_end_of_input;",
         "    }",
         "unroll:",
         "    *p_sptr = sptr0;",
-        "    while (sptr != sptr0) { /* Unroll down-to last accepting state */",
-        "        int n_pat = accept[(state = *(sptr - 1))];",
-        "        if (n_pat > 0) {",
+        "    while (sptr != sptr0) { /* Unroll down to last accepting state */",
     };
     static constexpr std::string_view text3_any_has_trail_context[] = {
-        "            enum { kTrailingContextFlag = 1, kFlagCount = 1 };",
+        "        int n_pat = accept[(state = *(sptr - 1))];",
+        "        if (n_pat > 0) {",
+        "            enum { trailing_context_flag = 1, flag_count = 1 };",
         "            int i;",
-        "            if (!(n_pat & kTrailingContextFlag)) {",
-        "                *p_llen = (unsigned)(sptr - sptr0);",
-        "                return n_pat >> kFlagCount;",
+        "            if (!(n_pat & trailing_context_flag)) {",
+        "                *p_llen = (size_t)(sptr - sptr0);",
+        "                return n_pat >> flag_count;",
         "            }",
-        "            n_pat >>= kFlagCount;",
+        "            n_pat >>= flag_count;",
         "            do {",
         "                for (i = lls_idx[state]; i < lls_idx[state + 1]; ++i) {",
         "                    if (lls_list[i] == n_pat) {",
-        "                        *p_llen = (unsigned)(sptr - sptr0);",
+        "                        *p_llen = (size_t)(sptr - sptr0);",
         "                        return n_pat;",
         "                    }",
         "                }",
         "                state = *(--sptr - 1);",
         "            } while (sptr != sptr0);",
-        "            *p_llen = (unsigned)(sptr - sptr0);",
-        "            return n_pat;",
-        "        }",
-        "        --sptr;",
-        "    }",
-        "    *p_llen = 1; /* Accept at least one symbol as default pattern */",
-        "    return predef_pat_default;",
-        "}",
     };
     static constexpr std::string_view text3[] = {
-        "            *p_llen = (unsigned)(sptr - sptr0);",
+        "        int n_pat = accept[*(sptr - 1)];",
+        "        if (n_pat > 0) {",
+    };
+    static constexpr std::string_view text4[] = {
+        "            *p_llen = (size_t)(sptr - sptr0);",
         "            return n_pat;",
         "        }",
         "        --sptr;",
@@ -121,7 +118,6 @@ void outputLexEngine(uxs::iobuf& outp, const EngineInfo& info) {
         "    return predef_pat_default;",
         "}",
     };
-    // clang-format on
     outp.put('\n');
     for (const auto& l : text0) {
         uxs::print(
@@ -142,6 +138,7 @@ void outputLexEngine(uxs::iobuf& outp, const EngineInfo& info) {
     } else {
         for (const auto& l : text3) { outp.write(l).put('\n'); }
     }
+    for (const auto& l : text4) { outp.write(l).put('\n'); }
 }
 
 //---------------------------------------------------------------------------------------
@@ -180,27 +177,22 @@ int main(int argc, char** argv) {
 
         auto parse_result = cli->parse(argc, argv);
         if (show_help) {
-            for (auto const* node = parse_result.node; node; node = node->get_parent()) {
-                if (node->get_type() == uxs::cli::node_type::command) {
-                    uxs::stdbuf::out.write(static_cast<const uxs::cli::basic_command<char>&>(*node).make_man_page(true));
-                    break;
-                }
-            }
+            uxs::stdbuf::out().write(parse_result.node->get_command()->make_man_page(uxs::cli::text_coloring::colored));
             return 0;
         } else if (show_version) {
-            uxs::println(uxs::stdbuf::out, "{}", XSTR(VERSION));
+            uxs::println(uxs::stdbuf::out(), "{}", XSTR(VERSION));
             return 0;
         } else if (parse_result.status != uxs::cli::parsing_status::ok) {
             switch (parse_result.status) {
                 case uxs::cli::parsing_status::unknown_option: {
-                    logger::fatal().println("unknown command line option `{}`", argv[parse_result.arg_count]);
+                    logger::fatal().println("unknown command line option `{}`", argv[parse_result.argc_parsed]);
                 } break;
                 case uxs::cli::parsing_status::invalid_value: {
-                    if (parse_result.arg_count < argc) {
-                        logger::fatal().println("invalid command line argument `{}`", argv[parse_result.arg_count]);
+                    if (parse_result.argc_parsed < argc) {
+                        logger::fatal().println("invalid command line argument `{}`", argv[parse_result.argc_parsed]);
                     } else {
                         logger::fatal().println("expected command line argument after `{}`",
-                                                argv[parse_result.arg_count - 1]);
+                                                argv[parse_result.argc_parsed - 1]);
                     }
                 } break;
                 case uxs::cli::parsing_status::unspecified_value: {
@@ -230,7 +222,7 @@ int main(int argc, char** argv) {
         logger::info(input_file_name).println("\033[1;34mbuilding analyzer...\033[0m");
         dfa_builder.build(static_cast<unsigned>(start_conditions.size()), case_insensitive);
 
-        size_t state_sz = sizeof(int);
+        std::size_t state_sz = sizeof(int);
         if (use_int8_if_possible && dfa_builder.getDtran().size() < 128) {
             eng_info.state_type = "int8_t", state_sz = 1;
         }
@@ -270,7 +262,7 @@ int main(int argc, char** argv) {
                 uxs::print(ofile, "\nenum {{\n");
                 if (start_conditions.size() > 1) {
                     uxs::print(ofile, "    sc_{} = 0,\n", start_conditions[0]);
-                    for (size_t i = 1; i < start_conditions.size() - 1; ++i) {
+                    for (std::size_t i = 1; i < start_conditions.size() - 1; ++i) {
                         uxs::print(ofile, "    sc_{},\n", start_conditions[i]);
                     }
                     uxs::print(ofile, "    sc_{}\n", start_conditions[start_conditions.size() - 1]);
@@ -295,7 +287,7 @@ int main(int argc, char** argv) {
                         std::vector<int> dtran_data;
                         int dtran_width = dfa_builder.getMetaCount();
                         dtran_data.reserve(dtran_width * Dtran.size());
-                        for (size_t j = 0; j < Dtran.size(); ++j) {
+                        for (std::size_t j = 0; j < Dtran.size(); ++j) {
                             std::copy_n(Dtran[j].data(), dtran_width, std::back_inserter(dtran_data));
                         }
                         uxs::print(ofile, "\nenum {{ dtran_width = {} }};\n", dtran_width);
@@ -319,7 +311,7 @@ int main(int argc, char** argv) {
             } else if (!Dtran.empty()) {
                 std::vector<int> dtran_data;
                 dtran_data.reserve(256 * Dtran.size());
-                for (size_t j = 0; j < Dtran.size(); ++j) {
+                for (std::size_t j = 0; j < Dtran.size(); ++j) {
                     uxs::transform(symb2meta, std::back_inserter(dtran_data),
                                    [&row = Dtran[j]](int meta) { return row[meta]; });
                 }

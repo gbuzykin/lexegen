@@ -25,7 +25,7 @@ static int goto_list[20] = {
 };
 
 static int parse(int tt, int* sptr0, int** p_sptr, int rise_error) {
-    enum { kShiftFlag = 1, kFlagCount = 1 };
+    enum { shift_flag = 1, flag_count = 1 };
     int action = rise_error;
     if (action >= 0) {
         const int* action_tbl = &action_list[action_idx[*(*p_sptr - 1)]];
@@ -33,23 +33,23 @@ static int parse(int tt, int* sptr0, int** p_sptr, int rise_error) {
         action = action_tbl[1];
     }
     if (action >= 0) {
-        if (!(action & kShiftFlag)) {
-            const int* info = &reduce_info[action >> kFlagCount];
+        if (!(action & shift_flag)) {
+            const int* info = &reduce_info[action >> flag_count];
             const int* goto_tbl = &goto_list[info[1]];
             int state = *((*p_sptr -= info[0]) - 1);
             while (goto_tbl[0] >= 0 && goto_tbl[0] != state) { goto_tbl += 2; }
             *(*p_sptr)++ = goto_tbl[1];
             return predef_act_reduce + info[2];
         }
-        *(*p_sptr)++ = action >> kFlagCount;
+        *(*p_sptr)++ = action >> flag_count;
         return predef_act_shift;
     }
     /* Roll back to state, which can accept error */
     do {
         const int* action_tbl = &action_list[action_idx[*(*p_sptr - 1)]];
         while (action_tbl[0] >= 0 && action_tbl[0] != predef_tt_error) { action_tbl += 2; }
-        if (action_tbl[1] >= 0 && (action_tbl[1] & kShiftFlag)) { /* Can recover */
-            *(*p_sptr)++ = action_tbl[1] >> kFlagCount;           /* Shift error token */
+        if (action_tbl[1] >= 0 && (action_tbl[1] & shift_flag)) { /* Can recover */
+            *(*p_sptr)++ = action_tbl[1] >> flag_count;           /* Shift error token */
             break;
         }
     } while (--*p_sptr != sptr0);

@@ -1,15 +1,9 @@
 #pragma once
 
-#include "valset.h"
+#include "node.h"
 
-#include <array>
 #include <list>
-#include <memory>
 #include <string>
-#include <vector>
-
-class Node;
-class PositionalNode;
 
 // DFA builder class
 class DfaBuilder {

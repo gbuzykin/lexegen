@@ -1,10 +1,8 @@
 #include "dfa_builder.h"
 
 #include "logger.h"
-#include "node.h"
 
 #include "uxs/algorithm.h"
-#include "uxs/format.h"
 
 #include <cctype>
 #include <unordered_map>

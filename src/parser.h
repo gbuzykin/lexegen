@@ -1,15 +1,11 @@
 #pragma once
 
 #include "logger.h"
-#include "valset.h"
-
-#include "uxs/iterator.h"
+#include "node.h"
 
 #include <list>
-#include <memory>
 #include <unordered_map>
 #include <variant>
-#include <vector>
 
 namespace lex_detail {
 #include "lex_defs.h"
@@ -17,8 +13,6 @@ namespace lex_detail {
 namespace parser_detail {
 #include "parser_defs.h"
 }
-
-class Node;
 
 // Input file parser class
 class Parser {
