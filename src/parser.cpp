@@ -363,7 +363,7 @@ int Parser::lex() {
             state_stack_.reserve(llen);
             first = last;
         }
-        first_ += llen, col_ += llen;
+        first_ += llen, col_ += static_cast<unsigned>(llen);
         tkn_.loc.col_last = col_ - 1;
 
         std::optional<char> escape;
@@ -465,7 +465,7 @@ int Parser::lex() {
                 } else if (id == "xdigit") {
                     valset.addValues('A', 'F').addValues('a', 'f').addValues('0', '9');
                 } else {
-                    tkn_.loc.col_first = tkn_.loc.col_last - llen + 1;
+                    tkn_.loc.col_first = tkn_.loc.col_last - static_cast<unsigned>(llen) + 1;
                     logger::error(*this, tkn_.loc).println("unknown character class");
                     return parser_detail::tt_lexical_error;
                 }
