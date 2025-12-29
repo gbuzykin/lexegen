@@ -1,21 +1,19 @@
 # Regular Expression Based Lexical Analyzer Generator
 
-This tool generates lexical analyzer based on a list of pattern descriptions in terms of regular
-expressions as an input.  Its input file is very similar to the input of standard
-[lex](https://en.wikipedia.org/wiki/Lex_(software)) tool by structure and syntax.  But contrary to
-*lex* instead of generating full analyzer with pattern matching inlined handlers `lexegen` generates
-only tables and pattern matching C-compliant function as files, which can be included into the rest
-analyzer's implementation.
+This tool generates lexical analyzer based on a list of pattern descriptions in terms of regular expressions as an
+input. Its input file is very similar to the input of standard [lex](https://en.wikipedia.org/wiki/Lex_(software)) tool
+by structure and syntax. But contrary to *lex* instead of generating full analyzer with pattern matching inlined
+handlers `lexegen` generates only tables and pattern matching C-compliant function as files, which can be included into
+the rest analyzer's implementation.
 
-This README file briefly describes this tool and can be not up-do-date, it also gives guidelines how
-to use this stuff.  For more detailed information see
-[wiki](https://github.com/gbuzykin/lexegen/wiki) pages.
+This README file briefly describes this tool and can be not up-do-date, it also gives guidelines how to use this stuff.
+For more detailed information see [wiki](https://github.com/gbuzykin/lexegen/wiki) pages.
 
 ## A Simple Usage Example
 
-Assume that we already have built this tool as `lexegen` executable, and we want to create a simple
-lexical analyzer, which extracts the following tokens from an input buffer: C-identifiers, unsigned
-integers, floating point numbers and C-strings.  Also we want to skip C-comments and whitespace.
+Assume that we already have built this tool as `lexegen` executable, and we want to create a simple lexical analyzer,
+which extracts the following tokens from an input buffer: C-identifiers, unsigned integers, floating point numbers and
+C-strings. Also we want to skip C-comments and whitespace.
 
 Here is a source input file `test.lex` for this analyzer:
 
@@ -23,7 +21,7 @@ Here is a source input file `test.lex` for this analyzer:
 # This is a simple lexical analyzer.
 
 # This section describes named regular expression definitions, which can be
-# expanded in further expressions using `{name}`.
+# expanded in further expressions via `{name}` token.
 # Each line has the form: <definition-name> <regex>.
 # Note that only end-of-line character terminates each regular expression, so
 # a comment can't be placed on the same line with the expression.
@@ -97,21 +95,21 @@ test.lex: info:  - total compressed transition table size: 656 bytes
 test.lex: info: done
 ```
 
-As the result two files with default names `lex_defs.h` and `lex_analyzer.inl` are generated.  If it
-is needed to specify the names explicitly the following should be issued:
+As the result two files with default names `lex_defs.h` and `lex_analyzer.inl` are generated. If it is needed to specify
+the names explicitly the following should be issued:
 
 ```bash
 ./lexegen test.lex -o <new-analyzer-file-name> --header-file=<new-defs-file-name>
 ```
 
-File `lex_defs.h` contains numerical identifiers for patterns and start conditions (or start
-analyzer states).  Only one `sc_initial` start condition is defined for our example.
+File `lex_defs.h` contains numerical identifiers for patterns and start conditions (or start analyzer states). Only one
+`sc_initial` start condition is defined for our example.
 
-File `lex_analyzer.inl` contains necessary tables and `lex()` function implementation, defined as
-`static`.  This function has the following prototype:
+File `lex_analyzer.inl` contains necessary tables and `lex()` function implementation, defined as `static`. This
+function has the following prototype:
 
 ```c
-static int lex(const char* first, const char* last, int** p_sptr, unsigned* p_llen, int flags);
+static int lex(const char* first, const char* last, int** p_sptr, size_t* p_llen, int flags);
 ```
 
 where:
@@ -129,58 +127,53 @@ returns: matched pattern identifier
 
 ## How It Works
 
-The analyzer always tries to match one of patterns to the next longest possible chunk of text.  If
-more than one patterns fit this chunk, then pattern priority is used.  The first pattern has the
-highest priority, and the last one has the lowest.
+The analyzer always tries to match one of patterns to the next longest possible chunk of text. If more than one patterns
+fit this chunk, then pattern priority is used. The first pattern has the highest priority, and the last one has the
+lowest.
 
-The starting state must be on the top of user-provided DFA stack before calling `lex()`.  Current
-stack pointer `*p_sptr` must point to the position *after* the last state (the first free stack
-cell)
+The starting state must be on the top of user-provided DFA stack before calling `lex()`. Current stack pointer `*p_sptr`
+must point to the position *after* the last state (the first free stack cell)
 
-After the function returns and the pattern is matched the stack pointer `*p_sptr` is the same as
-before calling the function.
+After the function returns and the pattern is matched the stack pointer `*p_sptr` is the same as before calling the
+function.
 
-In case if `flag_has_more` is not specified the stack pointer `*p_sptr` is *always* the same as
-before the calling.  If no user-provided pattern is matched it skips one character and returns
-`predef_pat_default`.  So, the function always matches at least one character from the input buffer.
-If input buffer is empty, it returns `err_end_of_input` (negative).
+In case if `flag_has_more` is *not specified* the stack pointer `*p_sptr` is *always* the same as before the calling. If
+no user-provided pattern is matched it skips one character and returns `predef_pat_default`. So, the function always
+matches at least one character from the input buffer. If input buffer is empty, it returns `err_end_of_input`
+(negative).
 
-If `flag_has_more` is not specified the analyzer leaves the stack pointer `*p_sptr` as it is and
-returns `err_end_of_input` in case of reaching the end of input buffer.  It gives a chance to add
-more characters to the input sequence and call the `lex()` function again to continue the analysis.
-Already analyzed part of input is no more needed.  All necessary information is in the state stack.
-In theory, the old input buffer can be freed, but in practice it will likely be needed in future to
-concatenate the full lexeme.
+If `flag_has_more` is *specified*, then in case of reaching the end of input buffer the analyzer leaves the stack
+pointer `*p_sptr` as it is and returns `err_end_of_input`. It gives a chance to add more characters to the input
+sequence and call `lex()` function again to continue the analysis. Already analyzed part of input is no more needed. All
+necessary information is in the state stack. In theory, the old input buffer can be freed, but in practice it will
+likely be needed in future to concatenate the full lexeme.
 
-User-provided DFA stack must have the same count of free cells as the length of the longest possible
-lexeme, or `last - first` if we must deal with lexemes of arbitrary length.  The other approach is
-to trim input buffer in case if it is longer than free range in user-provided DFA stack and to
-facilitate `flag_has_more` flag.  The probable code will look like this:
+User-provided DFA stack must have the same count of free cells as the length of the longest possible lexeme, or `last -
+first` if we must deal with lexemes of arbitrary length. The other approach is to trim input buffer in case if it is
+longer than free range in user-provided DFA stack and to facilitate `flag_has_more` flag. The probable code will look
+like this:
 
 ```cpp
-unsigned llen = 0;
 auto state_stack = std::make_unique<int[]>(kInitialStackSize);
-int* slast = state_stack.data() + kInitialStackSize;
-int* sptr = state_stack.data();
+int* slast = state_stack.get() + kInitialStackSize;
+int* sptr = state_stack.get();
 *sptr++ = lex_detail::sc_initial;
 ...
-const char* trimmed_first = first;
+int pat = 0;
+std::size_t llen = 0;
+...
 while (true) {
-    bool stack_limitation = false;
     const char* trimmed_last = last;
-    if (slast - sptr < last - trimmed_first) {
-        trimmed_last = first + static_cast<ptrdiff_t>(sptr, slast);
-        stack_limitation = true;
-    }
-    int pat = lex_detail::lex(trimmed_first, trimmed_last, &sptr, &llen, stack_limitation);
-    if (pat >= lex_detail::predef_pat_default) {
-        break; // the full lexeme is obtained
-    } else if (stack_limitation) {
-        // enlarge state stack and continue analysis
+    if (slast - sptr < last - first) { trimmed_last = first + static_cast<std::ptrdiff_t>(slast - sptr); }
+    pat = lex_detail::lex(first, trimmed_last, &sptr, &llen,
+                            trimmed_last != last ? lex_detail::flag_has_more : 0);
+    if (pat >= lex_detail::predef_pat_default) { break; }  // full lexeme is obtained
+    if (trimmed_last != last) {
+        // enlarge state stack, update `slast` & `sptr`, and continue analysis
         <... enlarge state stack ...>
-        trimmed_first = trimmed_last;
+        first = trimmed_last;
     } else {
-        <...  end of sequence ...>
+        <... end of sequence ...>
     }
 }
 ...
@@ -190,58 +183,84 @@ Note, that it is convenient to use the state stack also as a start condition sta
 
 ## User Code Example
 
-The probable code for the above example can be something like this:
-
 ```cpp
-...
+#include <cstdint>
+#include <cstring>
+#include <iostream>
+#include <memory>
+#include <string_view>
+
 namespace lex_detail {
 #include "lex_defs.h"
 #include "lex_analyzer.inl"
-}
-...
-int main() {
-    ...
-    const char* first = .... ; // the first char pointer
-    const char* last = .... ; // after the last char pointer
-    ...
-    unsigned llen = 0;
+}  // namespace lex_detail
+
+int main(int argc, char* argv[]) {
+    constexpr std::size_t kInitialStackSize = 64;
+
+    if (argc < 2) { return -1; }
+
+    const char* first = argv[1];                        // the first char pointer
+    const char* last = argv[1] + std::strlen(argv[1]);  // after the last char pointer
+
     auto state_stack = std::make_unique<int[]>(kInitialStackSize);
-    int* slast = state_stack.data() + kInitialStackSize;
-    int* sptr = state_stack.data();
+    int* slast = state_stack.get() + kInitialStackSize;
+    int* sptr = state_stack.get();
     *sptr++ = lex_detail::sc_initial;
-    ...
+
     while (true) {
-        first += llen;
-        const char* trimmed_first = first;
+        int pat = 0;
+        std::size_t llen = 0;
+        const char* first0 = first;
         while (true) {
-            bool stack_limitation = false;
             const char* trimmed_last = last;
-            if (slast - sptr < last - trimmed_first) {
-                trimmed_last = trimmed_first + static_cast<ptrdiff_t>(sptr, slast);
-                stack_limitation = true;
-            }
-            int pat = lex_detail::lex(trimmed_first, trimmed_last, &sptr, &llen, stack_limitation);
-            if (pat >= lex_detail::predef_pat_default) {
-                break; // the full lexeme is obtained
-            } else if (stack_limitation) {
-                // enlarge state stack and continue analysis
-                <... enlarge state stack ...>
-                trimmed_first = trimmed_last;
-            } else {
-                return; // end of sequence
-           }
+            if (slast - sptr < last - first) { trimmed_last = first + static_cast<std::ptrdiff_t>(slast - sptr); }
+            pat = lex_detail::lex(first, trimmed_last, &sptr, &llen,
+                                  trimmed_last != last ? lex_detail::flag_has_more : 0);
+            if (pat >= lex_detail::predef_pat_default) { break; }  // full lexeme is obtained
+            if (trimmed_last == last) { return 0; }                // end of sequence
+            // enlarge state stack, update `slast` & `sptr`, and continue analysis
+            const std::size_t old_stack_size = static_cast<std::ptrdiff_t>(sptr - state_stack.get());
+            const std::size_t new_stack_size = 2 * old_stack_size;
+            auto new_state_stack = std::make_unique<int[]>(new_stack_size);
+            std::memcpy(new_state_stack.get(), state_stack.get(), old_stack_size * sizeof(*sptr));
+            slast = new_state_stack.get() + new_stack_size;
+            sptr = new_state_stack.get() + old_stack_size;
+            state_stack = std::move(new_state_stack);
+            first = trimmed_last;
         }
+
+        std::string_view lexeme(first0, llen);
+
         switch (pat) {
-        lex_detail::pat_comment: .....; break;
-        lex_detail::pat_string: .....; break;
-        lex_detail::pat_id: .....; break;
-        lex_detail::pat_int: .....; break;
-        lex_detail::pat_real: .....; break;
-        lex_detail::pat_ws: .....; break;
-        pat_other::pat_other: .....; break;
+            case lex_detail::pat_comment: std::cout << "comment: " << lexeme << std::endl; break;
+            case lex_detail::pat_string: std::cout << "string: " << lexeme << std::endl; break;
+            case lex_detail::pat_id: std::cout << "id: " << lexeme << std::endl; break;
+            case lex_detail::pat_int: std::cout << "int: " << lexeme << std::endl; break;
+            case lex_detail::pat_real: std::cout << "real: " << lexeme << std::endl; break;
+            case lex_detail::pat_other: std::cout << "other: " << lexeme << std::endl; break;
+            default: break;
         }
+
+        first = first0 + llen;
     }
 }
+```
+
+Build and run result:
+
+```bash
+$ ./lexegen test.lex
+$ gcc example.cpp
+$ ./a.out "identifier 100; /*bla-bla-bla*/ 3.1415; \"hello, world\";"
+id: identifier
+int: 100
+other: ;
+comment: /*bla-bla-bla*/
+real: 3.1415
+other: ;
+string: "hello, world"
+other: ;
 ```
 
 ## Regular Expression Syntax
@@ -251,15 +270,14 @@ These rules are used to compose regular expressions for definitions or patterns:
 - `x` if this character is not a ' ', FF, CR, HT, or VT matches the character 'x'.
 - `.` any character (byte) except newline (NL)
 - `[xyz]` a "character class"; in this case, matches 'x', 'y', or 'z'
-- `[abj-oZ]` a "character class" with a range in it; matches an 'a', a 'b', any letter from 'j'
-  through 'o', or a 'Z'
-- `[^A-Z]` a "negated character class", i.e., any character but those in the class.  In this case,
-  any character EXCEPT an uppercase letter.
+- `[abj-oZ]` a "character class" with a range in it; matches an 'a', a 'b', any letter from 'j' through 'o', or a 'Z'
+- `[^A-Z]` a "negated character class", i.e., any character but those in the class. In this case, any character EXCEPT
+  an uppercase letter.
 - `[^A-Z\n]` any character EXCEPT an uppercase letter or a newline
 - `{name}` the expansion of the "name" definition (see above)
 - `"[xyz]\"foo"` the literal string: `[xyz]"foo`
-- `\X` if X is an 'a', 'b', 'f', 'n', 'r', 't', or 'v', then the ANSI-C interpretation of \x.
-  Otherwise, a literal 'X' (used to escape operators such as '*')
+- `\X` if X is an 'a', 'b', 'f', 'n', 'r', 't', or 'v', then the ANSI-C interpretation of \x. Otherwise, a literal 'X'
+  (used to escape operators such as '*')
 - `\123` the character with octal value 123
 - `\x2a` the character with hexadecimal value 2a
 - `r*` zero or more r's, where `r` is any regular expression
@@ -272,21 +290,19 @@ These rules are used to compose regular expressions for definitions or patterns:
 - `(r)` match an `r`; parentheses are used to override precedence
 - `rs` the regular expression `r` followed by the regular expression `s`; called "concatenation"
 - `r|s` either an `r` or an `s`
-- `r/s` an `r` but only if it is followed by an `s`.  The text matched by `s` is included when
-  determining whether this rule is the "longest match", but is then returned to the input.  So the
-  returned lexeme is only the text matched by `r`.  This type of pattern is called "trailing
-  context".  It should be the top pattern operator, UB otherwise.
-- `^r` an `r`, but only at the beginning of a line (i.e., when `flag_at_beg_of_line` flag is
-  specified).  It should be the first pattern operator, it is ignored otherwise.
-- `!^r` an `r`, but only *not* at the beginning of a line (i.e., when `flag_at_beg_of_line` flag is
-  *not* specified).  It should be the first pattern operator, it is ignored otherwise.
-- `r$` an `r`, but only at the end of a line (i.e., just before a newline).  Equivalent to `r/\n`.
-  Note that the end of input is not treated as a newline character, so it is not the end of a line.
+- `r/s` an `r` but only if it is followed by an `s`. The text matched by `s` is included when determining whether this
+  rule is the "longest match", but is then returned to the input. So the returned lexeme is only the text matched by
+  `r`. This type of pattern is called "trailing context". It should be the top pattern operator, UB otherwise.
+- `^r` an `r`, but only at the beginning of a line (i.e., when `flag_at_beg_of_line` flag is specified). It should be
+  the first pattern operator, it is ignored otherwise.
+- `!^r` an `r`, but only *not* at the beginning of a line (i.e., when `flag_at_beg_of_line` flag is *not* specified). It
+  should be the first pattern operator, it is ignored otherwise.
+- `r$` an `r`, but only at the end of a line (i.e., just before a newline). Equivalent to `r/\n`. Note that the end of
+  input is not treated as a newline character, so it is not the end of a line.
 
-In addition to characters and ranges of characters, character classes can also contain character
-class expressions.  These are expressions enclosed inside `[:` and `:]` delimiters (which themselves
-must appear between the `[` and `]` of the character class.  Other elements may occur inside the
-character class, too.  The valid expressions are:
+In addition to characters and ranges of characters, character classes can also contain character class expressions.
+These are expressions enclosed inside `[:` and `:]` delimiters, which themselves must appear between the `[` and `]` of
+the character class. Other elements may occur inside the character class, too. The valid expressions are:
 
 - `[:alnum:]` - alphanumeric characters `[A-Za-z0-9]`
 - `[:alpha:]` - alphabetic characters `[A-Za-z]`
@@ -308,16 +324,15 @@ For example, the following character classes are all equivalent:
 - `[[:alpha:][0-9]]`
 - `[a-zA-Z0-9]`
 
-Note that ' ', FF, CR, HT, or VT characters (bytes) are skipped while parsing regular expressions,
-use `\x20`, `\f`, `\r`, `\t`, or `\v` instead.  Also zero '\0' character (byte) is always treated as
-not matchable.
+Note that ' ', FF, CR, HT, or VT characters (bytes) are skipped while parsing regular expressions, use `\x20`, `\f`,
+`\r`, `\t`, or `\v` instead. Also zero '\0' character (byte) is always treated as not matchable.
 
 ## Command Line Options
 
 ```bash
 $ ./lexegen --help
 OVERVIEW: A tool for regular-expression based lexical analyzer generation
-USAGE: ./lexegen.exe file [-o <file>] [--header-file=<file>] [--no-case] [--compress <n>]
+USAGE: ./lexegen file [-o <file>] [--header-file=<file>] [--no-case] [--compress <n>]
            [--use-int8-if-possible] [-O <n>] [-h] [-V]
 OPTIONS:
     -o, --outfile=<file>    Place the output analyzer into <file>.
@@ -337,49 +352,43 @@ OPTIONS:
 
 ## How to Build `lexegen`
 
-Perform these steps to build the project (in linux, for other platforms the steps are similar):
+Perform these steps to build the project:
 
 1. Clone `lexegen` repository and enter it
 
     ```bash
-    git clone https://github.com/gbuzykin/lexegen
-    cd lexegen
+    $ git clone https://github.com/gbuzykin/lexegen.git
+    $ cd lexegen
     ```
 
 2. Initialize and update `uxs` submodule
 
     ```bash
-    git submodule update --init
+    $ git submodule update --init
     ```
 
-3. Then, compilation script should be created using `cmake` tool.  To use the default C++ compiler
-   just issue (for new enough version of `cmake`)
+3. Create compilation script using `cmake` tool
 
     ```bash
-    cmake -S . -B build
+    $ cmake --preset default
+    ```
+   
+    Default C++ compiler will be used.
+
+4. Build `lexegen`
+
+    ```bash
+    $ cmake --build build --config Release
     ```
 
-    or to make building scripts for debug or optimized configurations issue the following
+    To run several parallel processes (e.g. 8) for building use `-j` key
 
     ```bash
-    cmake -S . -B build -DCMAKE_BUILD_TYPE="Debug"
+    $ cmake --build build --config Release -j 8
     ```
 
-    or
+5. Install `lexegen`
 
     ```bash
-    cmake -S . -B build -DCMAKE_BUILD_TYPE="Release"
-    ```
-
-4. Enter created folder `build` and run `make`
-
-    ```bash
-    cd build
-    make
-    ```
-
-    to use several parallel processes (e.g. 8) for building run `make` with `-j` key
-
-    ```bash
-    make -j 8
+    $ cmake --install build --config Release --prefix <install-dir>
     ```

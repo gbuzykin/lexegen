@@ -1,6 +1,6 @@
 #include "parser.h"
 
-#include "uxs/algorithm.h"
+#include <uxs/algorithm.h>
 
 #include <optional>
 
@@ -146,7 +146,7 @@ bool Parser::parse() {
 }
 
 namespace {
-std::unique_ptr<Node> makeMultiplicateNode(std::unique_ptr<Node> node, est::span<const unsigned> num) {
+std::unique_ptr<Node> makeMultiplicateNode(std::unique_ptr<Node> node, std::span<const unsigned> num) {
     const auto* child = node.get();
     // Mandatory part
     std::unique_ptr<Node> left_subtree;

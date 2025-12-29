@@ -54,7 +54,7 @@ void Node::calcFunctions(std::vector<PositionalNode*>& positions) {
     }
 }
 
-void EmptySymbNode::calcFunctions(std::vector<PositionalNode*>& positions) { nullable_ = true; }
+void EmptySymbNode::calcFunctions(std::vector<PositionalNode*>& /*positions*/) { nullable_ = true; }
 
 void PositionalNode::calcFunctions(std::vector<PositionalNode*>& positions) {
     position_ = static_cast<unsigned>(positions.size());

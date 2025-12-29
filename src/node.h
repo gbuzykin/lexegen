@@ -29,17 +29,17 @@ class Node {
     explicit Node(NodeType type) : type_(type) {}
     virtual ~Node() = default;
 
-    NodeType getType() const { return type_; };
-    Node* getLeft() const { return left_.get(); };
-    void setLeft(std::unique_ptr<Node> left) { left_ = std::move(left); };
-    Node* getRight() const { return right_.get(); };
-    void setRight(std::unique_ptr<Node> right) { right_ = std::move(right); };
-    bool isNullable() const { return nullable_; };
-    const ValueSet& getFirstpos() const { return firstpos_; };
-    const ValueSet& getLastpos() const { return lastpos_; };
+    NodeType getType() const { return type_; }
+    Node* getLeft() const { return left_.get(); }
+    void setLeft(std::unique_ptr<Node> left) { left_ = std::move(left); }
+    Node* getRight() const { return right_.get(); }
+    void setRight(std::unique_ptr<Node> right) { right_ = std::move(right); }
+    bool isNullable() const { return nullable_; }
+    const ValueSet& getFirstpos() const { return firstpos_; }
+    const ValueSet& getLastpos() const { return lastpos_; }
     std::unique_ptr<Node> cloneTree() const;
 
-    virtual std::unique_ptr<Node> clone() const { return std::make_unique<Node>(type_); };
+    virtual std::unique_ptr<Node> clone() const { return std::make_unique<Node>(type_); }
     virtual void calcFunctions(std::vector<PositionalNode*>& positions);
 
  protected:
@@ -55,7 +55,7 @@ class Node {
 class EmptySymbNode : public Node {
  public:
     EmptySymbNode() : Node(NodeType::kEmptySymb) {}
-    std::unique_ptr<Node> clone() const override { return std::make_unique<EmptySymbNode>(); };
+    std::unique_ptr<Node> clone() const override { return std::make_unique<EmptySymbNode>(); }
     void calcFunctions(std::vector<PositionalNode*>& positions) override;
 };
 
@@ -64,9 +64,9 @@ class PositionalNode : public Node {
  public:
     explicit PositionalNode(NodeType type) : Node(type) {}
     void calcFunctions(std::vector<PositionalNode*>& positions) override;
-    const ValueSet& getFollowpos() const { return followpos_; };
-    void addFollowpos(unsigned pos) { followpos_.addValue(pos); };
-    void addFollowpos(const ValueSet& pos_set) { followpos_ |= pos_set; };
+    const ValueSet& getFollowpos() const { return followpos_; }
+    void addFollowpos(unsigned pos) { followpos_.addValue(pos); }
+    void addFollowpos(const ValueSet& pos_set) { followpos_ |= pos_set; }
 
  protected:
     unsigned position_ = 0;  // Node position
@@ -77,8 +77,8 @@ class PositionalNode : public Node {
 class SymbNode : public PositionalNode {
  public:
     explicit SymbNode(unsigned symb) : PositionalNode(NodeType::kSymbol), symb_(symb) {}
-    unsigned getSymbol() const { return symb_; };
-    std::unique_ptr<Node> clone() const override { return std::make_unique<SymbNode>(symb_); };
+    unsigned getSymbol() const { return symb_; }
+    std::unique_ptr<Node> clone() const override { return std::make_unique<SymbNode>(symb_); }
 
  protected:
     unsigned symb_;  // Node symbol
@@ -88,8 +88,8 @@ class SymbNode : public PositionalNode {
 class SymbSetNode : public PositionalNode {
  public:
     explicit SymbSetNode(const ValueSet& sset) : PositionalNode(NodeType::kSymbSet), sset_(sset) {}
-    const ValueSet& getSymbSet() const { return sset_; };
-    std::unique_ptr<Node> clone() const override { return std::make_unique<SymbSetNode>(sset_); };
+    const ValueSet& getSymbSet() const { return sset_; }
+    std::unique_ptr<Node> clone() const override { return std::make_unique<SymbSetNode>(sset_); }
 
  protected:
     ValueSet sset_;
@@ -99,7 +99,7 @@ class SymbSetNode : public PositionalNode {
 class TrailingContextNode : public PositionalNode {
  public:
     TrailingContextNode() : PositionalNode(NodeType::kTrailingContext) {}
-    std::unique_ptr<Node> clone() const override { return std::make_unique<TrailingContextNode>(); };
+    std::unique_ptr<Node> clone() const override { return std::make_unique<TrailingContextNode>(); }
     void calcFunctions(std::vector<PositionalNode*>& positions) override;
 };
 
@@ -107,8 +107,8 @@ class TrailingContextNode : public PositionalNode {
 class TermNode : public PositionalNode {
  public:
     explicit TermNode(unsigned pat_no) : PositionalNode(NodeType::kTerm), pattern_no_(pat_no) {}
-    unsigned getPatternNo() const { return pattern_no_; };
-    std::unique_ptr<Node> clone() const override { return std::make_unique<TermNode>(pattern_no_); };
+    unsigned getPatternNo() const { return pattern_no_; }
+    std::unique_ptr<Node> clone() const override { return std::make_unique<TermNode>(pattern_no_); }
 
  protected:
     unsigned pattern_no_;
