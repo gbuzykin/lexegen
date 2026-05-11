@@ -3,6 +3,8 @@
 #include "logger.h"
 #include "node.h"
 
+#include <uxs/io/iobuf.h>
+
 #include <list>
 #include <unordered_map>
 #include <variant>
