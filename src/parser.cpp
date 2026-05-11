@@ -3,6 +3,7 @@
 #include <uxs/algorithm.h>
 
 #include <optional>
+#include <tuple>
 
 namespace lex_detail {
 #include "lex_analyzer.inl"
