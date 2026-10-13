@@ -4,8 +4,11 @@
 #include "node.h"
 
 #include <uxs/io/iobuf.h>
+#include <uxs/iterator.h>
+#include <uxs/membuffer.h>
 
 #include <list>
+#include <string>
 #include <unordered_map>
 #include <variant>
 
@@ -32,7 +35,7 @@ class Parser {
     const std::string& getFileName() const { return file_name_; }
     const std::string& getCurrentLine() const { return current_line_; }
     const std::vector<std::string_view>& getStartConditions() const { return start_conditions_; }
-    uxs::iterator_range<std::list<Pattern>::iterator> getPatterns() { return uxs::make_range(patterns_); }
+    est::iterator_range<std::list<Pattern>::iterator> getPatterns() { return est::make_range(patterns_); }
 
  private:
     using TokenVal = std::variant<unsigned, std::string_view, ValueSet>;
@@ -49,7 +52,7 @@ class Parser {
     char* first_ = nullptr;
     char* last_ = nullptr;
     unsigned ln_ = 1, col_ = 1;
-    uxs::inline_basic_dynbuffer<int, 1> state_stack_;
+    uxs::basic_dynbuffer<int> state_stack_;
     TokenInfo tkn_;
     std::unordered_map<std::string_view, std::string_view> options_;
     std::unordered_map<std::string_view, std::unique_ptr<Node>> definitions_;
