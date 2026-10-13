@@ -105,8 +105,8 @@ the names explicitly the following should be issued:
 File `lex_defs.h` contains numerical identifiers for patterns and start conditions (or start analyzer states). Only one
 `sc_initial` start condition is defined for our example.
 
-File `lex_analyzer.inl` contains necessary tables and `lex()` function implementation, defined as `static`. This
-function has the following prototype:
+File `lex_analyzer.inl` contains necessary tables and `lex()` function implementation, defined as `static` by default.
+This function has the following prototype:
 
 ```c
 static int lex(const char* first, const char* last, int** p_sptr, size_t* p_llen, int flags);
@@ -330,11 +330,11 @@ Note that ' ', FF, CR, HT, or VT characters (bytes) are skipped while parsing re
 ## Command Line Options
 
 ```bash
-$ ./lexegen --help
+$ ./install/bin/lexegen --help
 OVERVIEW: A tool for regular-expression based lexical analyzer generation
-USAGE: ./lexegen file [-o <file>] [--header-file=<file>] [--no-case] [--compress <n>]
-           [--use-int8-if-possible] [-O <n>] [-h] [-V]
-OPTIONS:
+USAGE: ./install/bin/lexegen file [-o <file>] [--header-file=<file>] [--no-case] [--compress <n>]
+           [--use-int8-if-possible] [--no-engine] [-O <n>] [-h] [-V]
+OPTIONS: 
     -o, --outfile=<file>    Place the output analyzer into <file>.
     --header-file=<file>    Place the output definitions into <file>.
     --no-case               Build case insensitive analyzer.
@@ -343,6 +343,7 @@ OPTIONS:
                                 1 - do not compress analyzer table;
                                 2 - Default compression.
     --use-int8-if-possible  Use `int8_t` instead of `int` for states if state count is < 128.
+    --no-engine             Do not output analyzer function.
     -O <n>                  Set optimization level to <n>:
                                 0 - Do not optimize analyzer states;
                                 1 - Default analyzer optimization.

@@ -3,6 +3,7 @@
 #include <uxs/algorithm.h>
 
 #include <optional>
+#include <span>
 #include <tuple>
 
 namespace lex_detail {
@@ -92,7 +93,7 @@ bool Parser::parse() {
     do {
         if ((tt = lex()) == parser_detail::tt_id) {
             std::string_view name = std::get<std::string_view>(tkn_.val);
-            if (uxs::contains_if(patterns_, [&](const auto& pat) { return pat.id == name; })) {
+            if (std::ranges::any_of(patterns_, [&](const auto& pat) { return pat.id == name; })) {
                 logger::error(*this, tkn_.loc).println("pattern is already defined");
                 return false;
             }
@@ -195,14 +196,14 @@ std::unique_ptr<Node> makeMultiplicateNode(std::unique_ptr<Node> node, std::span
 std::pair<std::unique_ptr<Node>, int> Parser::parseRegex(int tt) {
     unsigned num[2] = {0, 0}, num_given = 0;
     std::vector<std::unique_ptr<Node>> node_stack;
-    uxs::inline_basic_dynbuffer<int, 1> sstack;
+    uxs::basic_dynbuffer<int> sstack;
 
     node_stack.reserve(256);
     sstack.reserve(256);
 
     sstack.push_back(parser_detail::sc_initial);  // Push initial state
     while (true) {
-        sstack.reserve(1);
+        sstack.reserve(sstack.size() + 1);
         auto* sptr = sstack.endp();
         int act = parser_detail::parse(tt, sstack.data(), &sptr, 0);
         sstack.setsize(sptr - sstack.data());
@@ -361,7 +362,7 @@ int Parser::lex() {
                 return parser_detail::tt_lexical_error;
             }
             // enlarge state stack and continue analysis
-            state_stack_.reserve(llen);
+            state_stack_.reserve(state_stack_.size() + llen);
             first = last;
         }
         first_ += llen, col_ += static_cast<unsigned>(llen);
@@ -379,17 +380,17 @@ int Parser::lex() {
             case lex_detail::pat_escape_v: escape = '\v'; break;
             case lex_detail::pat_escape_other: escape = lexeme[1]; break;
             case lex_detail::pat_escape_hex: {
-                escape = uxs::dig_v(lexeme[2]);
-                if (llen > 3) { *escape = (*escape << 4) + uxs::dig_v(lexeme[3]); }
+                escape = uxs::dig_v{}(lexeme[2]);
+                if (llen > 3) { *escape = (*escape << 4) + uxs::dig_v{}(lexeme[3]); }
                 if (!*escape) {
                     print_zero_escape_char_msg();
                     return parser_detail::tt_lexical_error;
                 }
             } break;
             case lex_detail::pat_escape_oct: {
-                escape = uxs::dig_v(lexeme[1]);
-                if (llen > 2) { *escape = (*escape << 3) + uxs::dig_v(lexeme[2]); }
-                if (llen > 3) { *escape = (*escape << 3) + uxs::dig_v(lexeme[3]); }
+                escape = uxs::dig_v{}(lexeme[1]);
+                if (llen > 2) { *escape = (*escape << 3) + uxs::dig_v{}(lexeme[2]); }
+                if (llen > 3) { *escape = (*escape << 3) + uxs::dig_v{}(lexeme[3]); }
                 if (!*escape) {
                     print_zero_escape_char_msg();
                     return parser_detail::tt_lexical_error;
@@ -513,7 +514,7 @@ int Parser::lex() {
             // ------ integer number
             case lex_detail::pat_num: {
                 unsigned num = 0;
-                for (unsigned n = 0; n < llen; ++n) { num = 10 * num + uxs::dig_v(lexeme[n]); }
+                for (unsigned n = 0; n < llen; ++n) { num = 10 * num + uxs::dig_v{}(lexeme[n]); }
                 tkn_.val = num;
                 return parser_detail::tt_num;
             } break;

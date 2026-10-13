@@ -67,7 +67,8 @@ endif()
 block()
 set(UXS_USE_ZLIB OFF)
 set(UXS_USE_LIBZIP OFF)
-set(UXS_DO_INSTALL_SDK OFF)
+set(UXS_BUILD_STATIC_ONLY ON)
+set(UXS_DO_INSTALL OFF)
 FetchContent_Declare(uxs SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/uxs)
 FetchContent_MakeAvailable(uxs)
 endblock()
@@ -80,7 +81,7 @@ file(GLOB_RECURSE sources src/*.h;src/*.cpp)
 add_executable(lexegen ${sources})
 
 target_compile_definitions(lexegen PRIVATE VERSION=${VERSION})
-target_link_libraries(lexegen PRIVATE UXS::UXS)
+target_link_libraries(lexegen PRIVATE UXS::UXS-static)
 
 install(TARGETS lexegen RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                                 COMPONENT binaries)

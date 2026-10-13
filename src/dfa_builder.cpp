@@ -4,7 +4,9 @@
 
 #include <uxs/algorithm.h>
 
+#include <algorithm>
 #include <cctype>
+#include <stdexcept>
 #include <unordered_map>
 
 void DfaBuilder::addPattern(std::unique_ptr<Node> syn_tree, unsigned n_pat, const ValueSet& sc) {
@@ -16,14 +18,14 @@ void DfaBuilder::addPattern(std::unique_ptr<Node> syn_tree, unsigned n_pat, cons
 }
 
 bool DfaBuilder::isPatternWithTrailingContext(unsigned n_pat) const {
-    return uxs::any_of(patterns_, [n_pat](const auto& pat) {
+    return std::ranges::any_of(patterns_, [n_pat](const auto& pat) {
         return static_cast<const TermNode*>(pat.syn_tree->getRight())->getPatternNo() == n_pat &&
                pat.syn_tree->getLeft()->getType() == NodeType::kTrailingContext;
     });
 }
 
 bool DfaBuilder::hasPatternsWithLeftNlAnchoring() const {
-    return uxs::any_of(patterns_, [](const auto& pat) {
+    return std::ranges::any_of(patterns_, [](const auto& pat) {
         return pat.syn_tree->getLeft()->getType() == NodeType::kLeftNlAnchoring ||
                pat.syn_tree->getLeft()->getType() == NodeType::kLeftNotNlAnchoring;
     });
@@ -125,12 +127,12 @@ void DfaBuilder::build(unsigned sc_count, bool case_insensitive) {
     } while (pending_states.size() > 0);
 
     auto is_dead_symb = [&Dtran = Dtran_](unsigned s) {
-        return uxs::all_of(Dtran, [s](const auto& T) { return T[s] == -1; });
+        return std::ranges::all_of(Dtran, [s](const auto& T) { return T[s] == -1; });
     };
 
     auto get_equiv_symb = [&Dtran = Dtran_](unsigned s) {
         for (unsigned s2 = 0; s2 < s; ++s2) {
-            if (uxs::all_of(Dtran, [s, s2](const auto& T) { return T[s] == T[s2]; })) { return s2; }
+            if (std::ranges::all_of(Dtran, [s, s2](const auto& T) { return T[s] == T[s2]; })) { return s2; }
         }
         return s;
     };
@@ -332,7 +334,7 @@ void DfaBuilder::makeCompressedDtran(std::vector<int>& def, std::vector<int>& ba
         for (unsigned meta = 0; meta < meta_count; ++meta) {
             if (T[meta] != -1) { diffs.push_back(meta); }
         }
-        return !diffs.empty() ? calc_diffs_weight(diffs) : 0u;
+        return !diffs.empty() ? calc_diffs_weight(diffs) : 0U;
     };
 
     auto compare_states = [meta_count = meta_count_, calc_diffs_weight](const auto& T, const auto& U, auto& diffs) {
@@ -340,7 +342,7 @@ void DfaBuilder::makeCompressedDtran(std::vector<int>& def, std::vector<int>& ba
         for (unsigned meta = 0; meta < meta_count; ++meta) {
             if (T[meta] != U[meta]) { diffs.push_back(meta); }
         }
-        return !diffs.empty() ? calc_diffs_weight(diffs) : 0u;
+        return !diffs.empty() ? calc_diffs_weight(diffs) : 0U;
     };
 
     unsigned first_free = 0;
