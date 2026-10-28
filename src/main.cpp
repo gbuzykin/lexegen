@@ -149,10 +149,11 @@ void outputLexEngine(uxs::iobuf& outp, const EngineInfo& info) {
 
 int main(int argc, char** argv) {
     try {
+        bool show_help = false;
+        bool show_version = false;
         bool case_insensitive = false;
         bool use_int8_if_possible = false;
         bool no_engine = false;
-        bool show_help = false, show_version = false;
         int optimization_level = 1;
         std::string input_file_name;
         std::string analyzer_file_name("lex_analyzer.inl");
@@ -378,6 +379,9 @@ int main(int argc, char** argv) {
         }
 
         return 0;
-    } catch (const std::exception& e) { logger::fatal().println("exception caught: {}", e.what()); }
-    return -1;
+
+    } catch (const std::exception& e) {
+        logger::fatal().println("exception caught: {}", e.what());
+        return -1;
+    }
 }
