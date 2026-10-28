@@ -85,6 +85,7 @@ target_link_libraries(lexegen PRIVATE UXS::UXS-static)
 
 install(TARGETS lexegen RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                                 COMPONENT binaries)
+install_win32_pdb(lexegen)
 
 # ##############################################################################
 # Auxiliary
