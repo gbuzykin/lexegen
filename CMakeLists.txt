@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.21)
 
-file(READ VERSION VERSION)
+execute_process(
+  COMMAND git log -n 1 --pretty=format:%cs-%h
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  OUTPUT_VARIABLE VERSION
+  OUTPUT_STRIP_TRAILING_WHITESPACE)
+
 if(VERSION STREQUAL "")
   message(FATAL_ERROR "Failed to detect version")
 else()
@@ -9,7 +14,6 @@ endif()
 
 project(
   lexegen
-  VERSION ${VERSION}
   DESCRIPTION "A tool for regular-expression based lexical analyzer generation"
   LANGUAGES CXX)
 
