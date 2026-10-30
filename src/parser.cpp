@@ -1,7 +1,10 @@
 #include "parser.h"
 
 #include <uxs/algorithm.h>
+#include <uxs/io/iostate.h>
+#include <uxs/span.h>
 
+#include <algorithm>
 #include <optional>
 #include <span>
 #include <tuple>
